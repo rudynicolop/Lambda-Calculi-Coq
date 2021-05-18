@@ -1,6 +1,5 @@
 Require Import Coq.Arith.PeanoNat Coq.micromega.Lia.
 Require Import Lambda.Util.
-Require Import Coq.ZArith.BinInt.
 
 (** * De Bruijn Syntax of Terms *)
 
@@ -510,14 +509,24 @@ Section Normalizing.
   Proof.
     intros e e' [He Hnf].
     induction He; inv Hnf; auto.
-    - assert (a2 >->* !n) by auto; clear IHHe.
-      (*assert (exists a2', a1 >->* a2' /\ a2' >->* a2).
-      + transitivity (beta_reduce e1 e2); auto.
-      + transitivity (λ e'); auto.
-        apply inject_trans_closure; constructor. admit.
-      + transitivity (e1' ⋅ e2); auto.
-        apply inject_trans_closure. *) admit.
+    - assert (a2 >->* !n) by auto; clear IHHe. admit.
     - assert (a2 >->* !n ⋅ e) by auto; clear IHHe. admit.
     - assert (a2 >->* λ e) by auto; clear IHHe. admit.
   Abort.
 End Normalizing.
+
+Section Examples.
+  Example omega_term : expr := λ !0 ⋅ !0.
+
+  Example omega_does_not_halt :
+    forall e, ~ halts (omega_term ⋅ omega_term) e.
+  Proof.
+    intros e [Ho Hnf].
+    remember (omega_term ⋅ omega_term) as oo eqn:Hoo.
+    induction Ho; subst.
+    - inv Hnf.
+    - apply IHHo; auto; clear a3 Hnf Ho IHHo; inv H; simpl; try reflexivity.
+      + inv H3. inv H0. inv H3. inv H3.
+      + inv H3. inv H0. inv H3. inv H3.
+  Qed.
+End Examples.
