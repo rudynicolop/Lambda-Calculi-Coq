@@ -1,7 +1,162 @@
 Require Import Coq.Arith.PeanoNat Coq.micromega.Lia.
 Require Import Lambda.Util.
+Require Import Coq.ZArith.BinInt.
 
 (** * De Bruijn Syntax of Terms *)
+
+Module IntShift.
+  Import Z.
+
+  Inductive expr : Set :=
+  | Var (z : Z)
+  | Lam (e : expr)
+  | App (e1 e2 : expr).
+  (**[]*)
+
+  Declare Scope expr_scope.
+  Delimit Scope expr_scope with expr.
+
+  Notation "'λ' e" := (Lam e) (at level 10) : expr_scope.
+  Notation "e1 ⋅ e2" := (App e1 e2) (at level 8, left associativity) : expr_scope.
+  Notation "! n" := (Var n) (at level 0) : expr_scope.
+
+  Open Scope expr_scope.
+  
+  Fixpoint shift (c i : Z) (e : expr) : expr :=
+    match e with
+    | !n =>  ! if (n <? c)%Z then n else n + i
+    | λ e => λ (shift (c + 1) i e)
+    | e1 ⋅ e2 => (shift c i e1) ⋅ (shift c i e2)
+    end.
+  (**[]*)
+
+  Lemma shift_up_down : forall e c i,
+      (0 < i)%Z ->
+      shift c (-i)%Z (shift c i e) = e.
+  Proof.
+    induction e as [z | e IHe | e1 IHe1 e2 IHe2];
+      intros; simpl; f_equal; auto.
+    destruct (z <? c)%Z eqn:Hzc; try rewrite Hzc; auto.
+    assert (Hzi: (z + i <? c)%Z = false).
+    { rewrite ltb_ge in *; lia. }
+    rewrite Hzi; lia.
+  Qed.
+
+  Lemma shift_down_up : forall e c i,
+      (0 < i)%Z ->
+      shift c i (shift c (-i)%Z e) = e.
+  Proof.
+    induction e as [z | e IHe | e1 IHe1 e2 IHe2];
+      intros; simpl; f_equal; auto.
+    destruct (z <? c)%Z eqn:Hzc; try rewrite Hzc; auto.
+  Abort.
+
+  Fixpoint sub (m : Z) (esub e : expr) : expr :=
+    match e with
+    | !n => if (m =? n)%Z then esub else !n
+    | λ e => λ (sub (m + 1) (shift 0 1 esub) e)
+    | e1 ⋅ e2 => (sub m esub e1) ⋅ (sub m esub e2)
+    end.
+  (**[]*)
+
+  Definition beta_reduce (e1 e2 : expr) : expr :=
+    shift 0 (-1)%Z (sub 0 (shift 0 1 e2) e1).
+  (**[]*)
+
+  Reserved Notation "e1 '-->' e2" (at level 40).
+
+  Inductive step : expr -> expr -> Prop :=
+  | step_beta e1 e2 :
+      (λ e1) ⋅ e2 -->  beta_reduce e1 e2
+  | step_lambda e e' :
+      e -->  e' ->
+      λ e -->  λ e'
+  | step_app_l e1 e1' e2 :
+      e1 -->  e1' ->
+      e1 ⋅ e2 -->  e1' ⋅ e2
+  | step_app_r e1 e2 e2' :
+      e2 -->  e2' ->
+      e1 ⋅ e2 -->  e1 ⋅ e2'
+  where "e1 '-->' e2" := (step e1 e2).
+  (**[]*)
+
+  Lemma shift_comm : forall e c1 i1 c2 i2,
+      shift c1 i1 (shift c2 i2 e) = shift c2 i2 (shift c1 i1 e).
+  Proof.
+    induction e; intros; simpl; f_equal; auto.
+    destruct (z <? c2)%Z eqn:Hzc2;
+      destruct (z <? c1)%Z eqn:Hzc1;
+      try rewrite Hzc1; try rewrite Hzc2; auto.
+  Abort.
+
+  Lemma shift_sub_shift : forall e1 e2 c1 i1 c2 i2,
+    (0 <= c1)%Z -> (0 <= c2)%Z -> (0 < i1)%Z -> (0 < i2)%Z ->
+    shift c1 i1 (shift c2 (-i2) (sub c2 (shift c2 i2 e2) e1)) =
+    shift c2 (-i2) (sub c2 (shift c2 i2 (shift c1 i1 e2)) (shift (c1 + 1) i1 e1)).
+  Proof.
+    induction e1; intros; simpl.
+    - admit.
+    - f_equal.
+  Abort.
+
+  Lemma shift_comm : forall e c1 i1 c2 i2,
+      (0 <= c1)%Z -> (0 <= c2)%Z -> (0 < i1)%Z -> (0 < i2)%Z ->
+      shift (c1 + 1) i1 (shift c2 i2 e) = shift c2 i2 (shift c1 i1 e).
+  Proof.
+    induction e; intros; simpl.
+    - destruct (z <? c2)%Z eqn:Hzc2;
+        destruct (z <? c1)%Z eqn:Hzc1;
+        repeat rewrite Hzc2; repeat rewrite Hzc1; f_equal;
+          try rewrite ltb_lt in *;
+          try rewrite ltb_ge in *.
+      + destruct (z <? c1 + 1)%Z eqn:Hzc11;
+          try rewrite ltb_ge in *; lia.
+      + destruct (z <? c1 + 1)%Z eqn:Hzc11;
+          destruct (z + i1 <? c2)%Z eqn:Hzi1c2;
+          try rewrite ltb_lt in *;
+          try rewrite ltb_ge in *; try lia; admit.
+      + admit.
+      + admit.
+    - f_equal; rewrite IHe by lia; reflexivity.
+    - rewrite IHe1 by lia;
+        rewrite IHe2 by lia; reflexivity.
+  Abort.
+
+  Lemma shift_sub_shift : forall e1 e2 c1 i1 c2 i2,
+      (0 <= c1)%Z -> (0 <= c2)%Z -> (0 < i1)%Z -> (0 < i2)%Z ->
+    shift c1 i1 (shift c2 (-i2) (sub c2 (shift 0 1 e2) e1)) =
+    shift c2 (-i2) (sub c2 (shift 0 1 (shift c1 i1 e2)) (shift (c1 + 1) i1 e1)).
+  Proof.
+    induction e1; intros; simpl.
+    - admit.
+    - f_equal. rewrite IHe1; simpl; f_equal; try lia.
+      do 2 f_equal.
+  Abort.
+  
+  Lemma shift_sub_shift : forall e1 e2 c i,
+    shift c i (shift 0 (-1) (sub 0 (shift 0 1 e2) e1)) =
+    shift 0 (-1) (sub 0 (shift 0 1 (shift c i e2)) (shift (c + 1) i e1)).
+  Proof.
+    induction e1; intros; simpl.
+    - admit.
+    - Fail rewrite <- IHe1.
+  Abort.
+    
+
+  Lemma step_shift : forall e e' c i,
+      e -->  e' ->
+      shift c i e -->  shift c i e'.
+  Proof.
+    Local Hint Constructors step : core.
+    intros e e' c i He;
+      generalize dependent i;
+      generalize dependent c;
+      induction He; intros; simpl; auto.
+    assert (H: shift c i (beta_reduce e1 e2) =
+               beta_reduce (shift (c + 1) i e1) (shift c i e2)).
+    { unfold beta_reduce.
+  Abort.
+End IntShift.
 
 Inductive expr : Set :=
 | Var (n : nat)
@@ -21,23 +176,23 @@ Open Scope expr_scope.
 (** Shifts free variables above a cutoff [c] using [op] (inc or dec). *)
 Fixpoint shift (op : nat -> nat) (c : nat) (e : expr) : expr :=
   match e with
-  | !n => Var $ if n <? c then n else op n
-  | λ e => Lam $ shift op (S c) e
-  | e1 ⋅ e2 => App (shift op c e1) (shift op c e2)
+  | !n =>  ! if n <? c then n else op n
+  | λ e => λ (shift op (S c) e)
+  | e1 ⋅ e2 => (shift op c e1) ⋅ (shift op c e2)
   end.
 (**[]*)
 
 Lemma shif_id : forall e c,
     shift (fun n => n) c e = e.
 Proof.
-  induction e; intros; simpl; unfold "$"; f_equal; auto.
+  induction e; intros; simpl; f_equal; auto.
   destruct (n <? c); reflexivity.
 Qed.
 
 Lemma shift_compose : forall f h e c,
     shift (compose f h) c e = compose (shift f c) (shift h c) e.
 Proof.
-  unfold compose. induction e; intros; simpl; unfold "$"; f_equal; auto.
+  unfold compose. induction e; intros; simpl; f_equal; auto.
   destruct (n <? c) eqn:Hnc; try rewrite Hnc; auto.
 Abort.
 
@@ -48,7 +203,7 @@ Definition shift_down : expr -> expr := shift pred 0.
 Lemma shift_c_down_comm : forall e c1 c2,
     shift pred c1 (shift pred c2 e) = shift pred c2 (shift pred c1 e).
 Proof.
-  induction e; intros; simpl;  unfold "$" in *; f_equal; auto.
+  induction e; intros; simpl;  f_equal; auto.
   (*destruct (n <? c2) eqn:Hc2; destruct (n <? c1) eqn:Hc1;
     simpl; repeat rewrite Hc1; repeat rewrite Hc2; auto; unfold "$".
     + assert (H: pred n <? c2 = true).
@@ -75,13 +230,13 @@ Abort.
 Lemma shift_c_down_comm_0 : forall e c,
     shift pred c (shift pred 0 e) = shift pred 0 (shift pred c e).
 Proof.
-  induction e; intros; simpl; unfold "$"; f_equal; auto.
+  induction e; intros; simpl; f_equal; auto.
 Abort.
 
 Lemma shift_c_down_up : forall e c,
     shift pred c (shift S c e) = e.
 Proof.
-  induction e; intros; simpl; unfold "$" in *; f_equal; auto.
+  induction e; intros; simpl; f_equal; auto.
   destruct (n <? c) eqn:Hni;
     simpl; try rewrite Hni; auto.
   assert (H: S n <? c = false).
@@ -100,8 +255,8 @@ Qed.
 Fixpoint sub (m : nat) (esub e : expr) : expr :=
   match e with
   | !n => if m =? n then esub else !n
-  | λ e => Lam $ sub (S m) (shift_up esub) e
-  | e1 ⋅ e2 => App (sub m esub e1) $ sub m esub e2
+  | λ e => λ (sub (S m) (shift_up esub) e)
+  | e1 ⋅ e2 => (sub m esub e1) ⋅ (sub m esub e2)
   end.
 (**[]*)
 
@@ -110,7 +265,7 @@ Fixpoint sub (m : nat) (esub e : expr) : expr :=
 
 (** Beta-reduction [(λx.e1) e2 -> e1{e2/x}]. *)
 Definition beta_reduce (e1 e2 : expr) : expr :=
-  shift_down $ sub 0 (shift_up e2) e1.
+  shift_down (sub 0 (shift_up e2) e1).
 (**[]*)
 
 Lemma sub_beta_reduce : forall e1 e2 m es,
@@ -119,7 +274,7 @@ Lemma sub_beta_reduce : forall e1 e2 m es,
       (sub (S m) (shift_up es) e1)
       (sub m es e2).
 Proof.
-  unfold beta_reduce, "$"; simpl.
+  unfold beta_reduce; simpl.
   induction e1
     as [ [| n1]
        | e1 IHe1
@@ -131,7 +286,7 @@ Abort.
 Lemma shift_sub : forall e es m,
     shift pred m (sub m es (shift S m e)) = e.
 Proof.
-  induction e; intros es m; simpl; f_equal; unfold "$"; auto.
+  induction e; intros es m; simpl; f_equal; auto.
   - destruct (n <? m) eqn:Hnm.
     + assert (m =? n = false).
       { rewrite Nat.ltb_lt in Hnm.
@@ -144,14 +299,13 @@ Proof.
         { rewrite Nat.ltb_ge in *.
           rewrite Nat.eqb_neq in *. lia. }
         rewrite H; reflexivity.
-  - rewrite IHe; reflexivity.
 Qed.
 
 Lemma sub_beta_c : forall e1 e2 es c m,
   sub m es (shift pred c (sub c (shift S c e2) e1)) =
   shift pred c (sub c (shift S c (sub m es e2)) (sub (S m) (shift S c es) e1)).
 Proof.
-  induction e1; intros e2 es c m; simpl; unfold shift_up, "$".
+  induction e1; intros e2 es c m; simpl; unfold shift_up.
   - admit.
   - f_equal. Fail rewrite <- IHe1. admit.
   - f_equal; auto.
@@ -228,6 +382,36 @@ Module NonDet.
 
   Section Conf.
     Local Hint Constructors step : core.
+
+    Lemma shift_up_down_c_comm : forall e c1 c2,
+        c2 <= c1 ->
+        shift S c1 (shift pred c2 e) = shift pred c2 (shift S c1 e).
+    Proof.
+      induction e as [n | e IHe | e1 IHe1 e2 IHe2]; intros; simpl; f_equal; auto.
+      destruct (n <? c2) eqn:Hnc2; destruct (n <? c1) eqn:Hnc1;
+        try rewrite Hnc2; try rewrite Hnc1; auto.
+      - destruct (S n <? c2) eqn:HSnc2; simpl; auto.
+        rewrite Nat.ltb_lt in *; rewrite Nat.ltb_ge in *; lia.
+      - destruct (pred n <? c1) eqn:Hpnc1; simpl; auto.
+        rewrite Nat.ltb_lt in *; rewrite Nat.ltb_ge in *; lia.
+      - destruct (S n <? c2) eqn:HSnc2;
+          destruct (pred n <? c1) eqn:Hpnc1; simpl; auto;
+            try rewrite Nat.ltb_lt in *; try rewrite Nat.ltb_ge in *; try lia.
+        + destruct n; simpl in *; try lia. admit.
+        + destruct n; simpl in *; try lia. admit.
+      - rewrite IHe by lia. reflexivity.
+    Abort.
+        
+
+    Lemma shift_up_c_reduce : forall e e' c,
+        e -->  e' -> shift S c e -->  shift S c e'.
+    Proof.
+      intros e e' c H; generalize dependent c;
+        induction H; intros; simpl; auto.
+      assert (shift S c (beta_reduce e1 e2) =
+              beta_reduce (shift S (S c) e1) (shift S c e2)).
+      { unfold beta_reduce, shift_down, shift_up.
+    Abort.    
       
     Lemma sub_reduce_sub : forall e e' es m,
         e -->  e' -> sub m es e -->  sub m es e'.
@@ -235,11 +419,11 @@ Module NonDet.
       intros e e' es m H; generalize dependent m;
         generalize dependent es;
         induction H; intros es m;
-          simpl; unfold "$"; eauto.
+          simpl; eauto.
       assert (sub m es (beta_reduce e1 e2) =
               beta_reduce (sub (S m) (shift_up es) e1) (sub m es e2)).
-      { unfold beta_reduce, shift_down, shift_up, "$".
-        induction e1; simpl; unfold "$".
+      { unfold beta_reduce, shift_down, shift_up.
+        induction e1; simpl.
         - admit.
         - f_equal. Fail rewrite <- IHe1. admit.
         - f_equal; auto.
@@ -249,7 +433,7 @@ Module NonDet.
         e -->  e' -> shift pred c e -->  shift pred c e'.
     Proof.
       intros e e' c H; generalize dependent c;
-        induction H; intros c; simpl; unfold "$"; auto.
+        induction H; intros c; simpl; auto.
       unfold beta_reduce, shift_down.
     Abort.
 
@@ -259,12 +443,12 @@ Module NonDet.
     Proof.
       intros e1 e2 e c H; generalize dependent c;
         generalize dependent e;
-        induction H; intros; simpl; unfold "$"; auto.
+        induction H; intros; simpl; auto.
       - assert (shift pred c (sub c e (beta_reduce e1 e2)) =
                 beta_reduce
                   (shift pred (S c) (sub (S c) (shift_up e) e1))
                   (shift pred c (sub c e e2))).
-        { unfold beta_reduce, shift_up, shift_down, "$"; simpl.
+        { unfold beta_reduce, shift_up, shift_down; simpl.
     Abort.
     
     Lemma beta_reduce_subterm_l : forall e1 e2 e,
@@ -273,8 +457,7 @@ Module NonDet.
     Proof.
       intros e1 e2 e H; generalize dependent e;
         induction H; intros;
-          unfold beta_reduce, shift_down, shift_up, "$" in *; simpl in *;
-            unfold "$" in *; auto.
+          unfold beta_reduce, shift_down, shift_up; simpl in *; auto.
       - admit.
       - constructor. admit.
     Abort.
