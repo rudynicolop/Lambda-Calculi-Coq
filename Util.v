@@ -1,9 +1,26 @@
-Require Export Coq.Program.Basics.
-Require Export Coq.Classes.RelationClasses.
+Require Export Coq.Program.Basics Coq.Classes.RelationClasses
+        Coq.Lists.List Coq.Arith.PeanoNat
+        Coq.micromega.Lia Coq.Arith.Compare_dec.
+Export ListNotations.
 
 Infix "$" := apply (at level 41, right associativity).
 
 Ltac inv H := inversion H; subst; clear H.
+
+Ltac compare_destruct :=
+  match goal with
+  | |- context [lt_dec ?a ?b]
+    => destruct (lt_dec a b) as [? | ?] eqn:?
+  | |- context [lt_eq_lt_dec ?a ?b]
+    => destruct (lt_eq_lt_dec a b) as [[? | ?] | ?] eqn:?
+  | |- context [match ?n with 0 => _ | S _ => _ end]
+    => destruct n as [| ?]
+  end.
+(**[]*)
+
+Ltac compare_destruct_star := repeat (compare_destruct; simpl).
+
+Ltac clean_compare := compare_destruct_star; try lia; auto.
 
 (** * Binary Relations *)
 

@@ -1,4 +1,3 @@
-Require Import Coq.Arith.PeanoNat Coq.micromega.Lia Coq.Arith.Compare_dec.
 Require Import Lambda.Util.
 
 (** * De Bruijn Syntax of Terms *)
@@ -42,21 +41,6 @@ Fixpoint subst (i : nat) (esub e : expr) : expr :=
   | e1 ⋅ e2 => (subst i esub e1) ⋅ (subst i esub e2)
   end.
 (**[]*)
-
-Ltac compare_destruct :=
-  match goal with
-  | |- context [lt_dec ?a ?b]
-    => destruct (lt_dec a b) as [? | ?] eqn:?
-  | |- context [lt_eq_lt_dec ?a ?b]
-    => destruct (lt_eq_lt_dec a b) as [[? | ?] | ?] eqn:?
-  | |- context [match ?n with 0 => _ | S _ => _ end]
-    => destruct n as [| ?]
-  end.
-(**[]*)
-
-Ltac compare_destruct_star := repeat (compare_destruct; simpl).
-
-Ltac clean_compare := compare_destruct_star; try lia; auto.
 
 Section FrenchLemmas.
   (** The confluence proof reqiured

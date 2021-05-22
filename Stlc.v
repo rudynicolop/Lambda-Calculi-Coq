@@ -1,6 +1,4 @@
-Require Import Lambda.Util.
-Require Import Coq.Lists.List Coq.Arith.PeanoNat Coq.micromega.Lia.
-Import ListNotations.
+Require Import Lambda.Util Coq.Program.Equality.
 
 (** * De Bruijn Syntax *)
 
@@ -82,58 +80,121 @@ Inductive normal : expr -> Prop :=
     normal (e1 ⋅ e2).
 (**[]*)
 
-(** TODO: this implementation is
-    difficult to prove correct.
-    I need a single [Fixpoint] to perform substitution/beta-reduction. *)
-
-(** Shifts free variables above a cutoff [c] using [op] (inc or dec). *)
-Fixpoint shift (op : nat -> nat) (c : nat) (e : expr) : expr :=
+(** Shifts free variables above a cutoff [c] up by [i]. *)
+Fixpoint shift (c i : nat) (e : expr) : expr :=
   match e with
-  | !n =>  ! if n <? c then n else op n
-  | λ τ ⇒ e => λ τ ⇒ (shift op (S c) e)
-  | e1 ⋅ e2 => (shift op c e1) ⋅ (shift op c e2)
+  | !n =>  ! match lt_dec n c with
+            | left _ => n
+            | right _ => n + i
+            end
+  | λ τ ⇒ e => λ τ ⇒ (shift (S c) i e)
+  | e1 ⋅ e2 => (shift c i e1) ⋅ (shift c i e2)
   end.
 (**[]*)
 
-Lemma shift_c_down_up : forall e c,
-    shift pred c (shift S c e) = e.
-Proof.
-  induction e; intros; simpl; f_equal; auto 1.
-  destruct (n <? c) eqn:Hnc;
-    simpl; try rewrite Hnc; try reflexivity.
-  assert (HSnc: S n <? c = false).
-  { rewrite Nat.ltb_ge in *; lia. }
-  rewrite HSnc; reflexivity.
-Qed.
+Ltac destroy_arith :=
+  intros; simpl; clean_compare;
+  try (f_equal; auto 2; lia).
 
-(*Definition shift_up : expr -> expr := shift S 0.*)
+Section ShiftLemmas.
+  Lemma shift0 : forall e k, shift k 0 e = e.
+  Proof. induction e; destroy_arith. Qed.
 
-(*Definition shift_down : expr -> expr := shift pred 0.*)
+  Lemma simpl_shift : forall e n p k i,
+      i <= k + n -> k <= i ->
+      shift i p (shift k n e) = shift k (p + n) e.
+  Proof.
+    induction e; destroy_arith.
+    f_equal; apply IHe; lia.
+  Qed.
 
-(*Lemma shift_down_up : forall e,
-    shift_down (shift_up e) = e.
-Proof.
-  unfold shift_down, shift_up.
-  exact (fun e => shift_c_down_up e 0).
-Qed.*)
+  Local Hint Extern 0 => rewrite simpl_shift by lia; reflexivity : core.
 
-(** Substitution [e{esub/m}]. *)
-Fixpoint sub (m : nat) (esub e : expr) : expr :=
+  Lemma permute_shift : forall e n k p i,
+      i <= k -> shift i p (shift k n e) = shift (p + k) n (shift i p e).
+  Proof.
+    induction e; destroy_arith.
+    f_equal; rewrite IHe; f_equal; lia.
+  Qed.
+
+  Local Hint Extern 0 => rewrite permute_shift by lia; reflexivity : core.
+End ShiftLemmas.
+
+(** Substitution [e{esub/i}]. *)
+Fixpoint sub (i : nat) (esub e : expr) : expr :=
   match e with
-  | !n => if m =? n then esub else !n
-  | λ τ ⇒ e => λ τ ⇒ (sub (S m) (shift S 0 esub) e)
-  | e1 ⋅ e2 => (sub m esub e1) ⋅ (sub m esub e2)
+  | !n => match lt_eq_lt_dec i n with
+         | inleft (left _) => ! (pred n)
+         | inleft (right _) => shift 0 i esub
+         | inright _ => !n
+         end
+  | λ τ ⇒ e => λ τ ⇒ (sub (S i) esub e)
+  | e1 ⋅ e2 => (sub i esub e1) ⋅ (sub i esub e2)
   end.
 (**[]*)
 
-Definition beta_reduce_c (c : nat) (e1 e2 : expr) : expr :=
-  shift pred c (sub c (shift S 0 e2) e1).
-(**[]*)
+Section SubShiftLemmas.
+  Local Hint Extern 0 => rewrite simpl_shift by lia; reflexivity : core.
+  Local Hint Extern 0 => rewrite permute_shift by lia; reflexivity : core.
+
+  Lemma simpl_sub : forall M N n p k,
+    p <= n + k -> k <= p ->
+    sub p N (shift k (S n) M) = shift k n M.
+  Proof.
+    induction M; destroy_arith.
+    f_equal; apply IHM; lia.
+  Qed.
+
+  Local Hint Extern 0 => rewrite simpl_sub by lia; reflexivity : core.
+
+  Lemma commute_shift_sub : forall M N n p k,
+      k <= p ->
+      shift k n (sub p N M) = sub (n + p) N (shift k n M).
+  Proof.
+    induction M; destroy_arith.
+    f_equal; rewrite IHM; f_equal; lia.
+  Qed.
+
+  Local Hint Extern 0 => rewrite commute_shift_sub by lia; reflexivity : core.
+  
+  Lemma distr_shift_sub : forall M N n p k,
+      shift (p + k) n (sub p N M) = sub p (shift k n N) (shift (S (p + k)) n M).
+  Proof.
+    induction M; destroy_arith.
+    f_equal; rewrite <- IHM; f_equal; lia.
+  Qed.
+
+  Lemma distr_sub : forall M N P n p,
+      sub (p + n) P (sub p N M) =
+      sub p (sub n P N) (sub (S (p + n)) P M).
+  Proof.
+    induction M; destroy_arith.
+    f_equal; rewrite <- IHM; f_equal; lia.
+  Qed.
+End SubShiftLemmas.
 
 (** Beta-reduction [(λx.e1) e2 -> e1{e2/x}]. *)
-Definition beta_reduce (e1 e2 : expr) : expr := beta_reduce_c 0 e1 e2.
-  (*shift_down (sub 0 (shift_up e2) e1).*)
+Definition beta_reduce (e1 e2 : expr) : expr := sub 0 e2 e1.
 (**[]*)
+
+Lemma distr_shift_beta : forall M N n k,
+    shift k n (beta_reduce M N) = beta_reduce (shift (S k) n M) (shift k n N).
+Proof.
+  intros; unfold beta_reduce.
+  replace k with (0 + k) at 1 by lia.
+  replace k with (0 + k) at 3 by lia.
+  apply distr_shift_sub.
+Qed.
+
+Lemma distr_sub_beta : forall M N P n,
+    sub n P (beta_reduce M N) =
+    beta_reduce (sub (S n) P M) (sub n P N).
+Proof.
+  intros; unfold beta_reduce.
+  replace n with (0 + n) at 1 by lia.
+  replace n with (0 + n) at 3 by lia.
+  apply distr_sub.
+Qed.
 
 (** Normal-order Reduction. *)
 
@@ -243,75 +304,268 @@ Section Progress.
   Local Hint Constructors normal : core.
   Local Hint Constructors step : core.
 
-  Lemma triv : forall e, normal e \/ exists e', e -->  e'.
+  Lemma trival_progress : forall e, normal e \/ exists e', e -->  e'.
   Proof.
-    induction e; eauto.
-    - destruct IHe as [? | [? ?]]; eauto.
+    induction e; eauto 3.
+    - destruct IHe as [? | [? ?]]; eauto 4.
     - destruct (is_lambda_exm e1) as [HL | ?];
-        try inv HL; eauto.
+        try inv HL; eauto 4.
       destruct IHe1 as [? | [? ?]];
-        destruct IHe2 as [? | [? ?]]; eauto.
+        destruct IHe2 as [? | [? ?]]; eauto 4.
   Qed.
-
-  (* TODO: progress is trivially true
-     b/c there do not exist "stuck" terms. *)
-  Theorem progress_stlc : forall e τ,
-    [] ⊢ e ∈ τ -> normal e \/ exists e', e -->  e'.
-  Proof. intros. apply triv. Qed.
-  (*intros ? ? H.
-    remember [] as g eqn:Hg.
-    induction H; subst; eauto.
-    - 
-      repeat match goal with
-             | IH: (normal ?e \/ exists _, ?e -->  _)
-               |- _ => destruct IH as [? | [? ?]]
-             | Ht: [] ⊢ ?e ∈ _ → _, Hnf: normal ?e
-               |- _ => pose proof canonical_forms_lambda _ _ _ Hnf Ht as [? ?]
-             end; eauto.
-  Admitted.*)
 End Progress.
 
 Section Substituion.
+  (** Lemmas inspired by:
+      [http://www.lix.polytechnique.fr/~barras/CoqInCoq/Types.html] *)
+  
   Local Hint Constructors check : core.
-  Hint Rewrite shift_c_down_up : core.
+  Hint Rewrite distr_sub_beta : core.
+  Hint Rewrite shift0 : core.
   Hint Rewrite Nat.eqb_eq : core.
   Hint Rewrite Nat.eqb_neq : core.
+  Hint Rewrite nth_error_nil : core.
 
-  Lemma substition_lemma' : forall Γ τ τ' e e' c,
-    (τ' :: Γ) ⊢ e ∈ τ -> Γ ⊢ e' ∈ τ' -> Γ ⊢ beta_reduce_c c e e' ∈ τ.
+  Fixpoint insert_nth {A : Type} (n : nat) (a : A) (l : list A) : list A :=
+    match n with
+    | 0 => a :: l
+    | S n =>
+      match l with
+      | [] => [] (* idk? *)
+      | h :: l => h :: insert_nth n a l
+      end
+    end.
+  (**[]*)
+
+  Lemma insert_nth_length_app : forall (A : Type) l1 l2 (a : A),
+      insert_nth (length l1) a (l1 ++ l2) = l1 ++ a :: l2.
+  Proof. induction l1; intros; simpl; f_equal; auto. Qed.
+
+  Search (skipn _ (?l ++ _)).
+  Lemma skipn_length_app : forall (A : Type) (l1 l2 : list A),
+      skipn (length l1) (l1 ++ l2) = l2.
+  Proof. induction l1; intros; simpl; f_equal; auto. Qed.
+
+  Fixpoint remove_nth {A : Type} (n : nat) (l : list A) : list A :=
+    match n,l with
+    | 0,[] => []
+    | 0, _::t => t
+    | S _, [] => []
+    | S n, h::t => h :: remove_nth n t
+    end.
+
+  Lemma remove_nth_of_nil : forall A n, @remove_nth A n [] = [].
+  Proof. destruct n; reflexivity. Qed.
+
+  Lemma nth_error_length : forall A n l (a : A),
+      nth_error l n = Some a -> n < length l.
   Proof.
-    intros g t t' e.
-    generalize dependent t';
-      generalize dependent t;
-      generalize dependent g.
-    unfold beta_reduce_c.
-    induction e; intros ? ? ? ? ? He He'; inv He;
-      simpl in *; eauto 4.
-    - destruct (c =? n) eqn:Hcn; destruct n;
-        simpl in *; autorewrite with core in *; subst;
-          autorewrite with core in *.
-      + inv H0; assumption.
-      + admit.
-      + admit.
-      + admit.
+    induction n; destruct l; intros; simpl in *;
+      try discriminate; try lia.
+    apply IHn in H. lia.
+  Qed.
+
+  Lemma under_prefix : forall e τ Γ Γ',
+      Γ ⊢ e ∈ τ -> (Γ ++ Γ') ⊢ e ∈ τ.
+  Proof.
+    induction e; intros τ g g' H;
+      inv H; simpl in *;
+        autorewrite with core in *;
+        try discriminate; eauto.
     - constructor.
-      eapply IHe; admit.
+      rewrite nth_error_app1; eauto using nth_error_length.
+    - constructor.
+      replace (t :: g ++ g') with ((t :: g) ++ g') by reflexivity.
+      eauto.
+  Qed.
+
+  Lemma under_empty : forall e τ Γ,
+      [] ⊢ e ∈ τ -> Γ ⊢ e ∈ τ.
+  Proof.
+    intros. replace Γ with ([] ++ Γ) by reflexivity.
+    auto using under_prefix.
+  Qed.
+
+  (** [skipn] as a relation, like [trunc]. *)
+  Inductive skip {A : Type} : nat -> list A -> list A -> Prop :=
+  | skip0 l :
+      skip 0 l l
+  | skipS n h t l :
+      skip n t l ->
+      skip (S n) (h :: t) l.
+  (**[]*)
+
+  Lemma skip_skipn : forall A n (l : list A),
+      n <= length l ->
+      skip n l (skipn n l).
+  Proof.
+    Local Hint Constructors skip : core.
+    induction n; destruct l; intros;
+      simpl in *; eauto; try lia.
+    constructor. apply IHn. lia.
+  Qed.
+
+  (** [insert_nth] as a relation, like [sub_in_env]. *)
+  Inductive ins_nth {A : Type} (a : A) : nat -> list A -> list A -> Prop :=
+  | ins_nth0 l :
+      ins_nth a 0 l (a :: l)
+  | ins_nthS n h t l :
+      ins_nth a n t l ->
+      ins_nth a (S n) (h :: t) (h :: l).
+  (**[]*)
+
+  Lemma ins_nth_insert_nth : forall A n (a : A) l,
+      n <= length l ->
+      ins_nth a n l (insert_nth n a l).
+  Proof.
+    Local Hint Constructors ins_nth : core.
+    induction n; intros ? []; intros;
+      simpl in *; try lia; eauto.
+    constructor. apply IHn. lia.
+  Qed.
+
+  Lemma typ_sub_weak : forall e e' g1 g2 g3 t t' n,
+      ins_nth t' n g2 g1 ->
+      skip n g2 g3 ->
+      g1 ⊢ e ∈ t ->
+      g2 ⊢ e' ∈ t' ->
+      g3 ⊢ sub n e' e ∈ t.
+  Proof.
+    induction e; intros ? ? ? ? ? ? ? HI HS He He';
+      inv He; simpl in *; eauto.
+    - admit.
+    - constructor.
+      apply IHe with (g1 := t :: g1) (g2 := t :: g2) (t' := t').
+      + constructor. assumption.
+      + constructor. admit.
+      + assumption.
+      + admit.
   Abort.
+
+  Lemma doi : forall a c,
+      a < c -> exists b, a + b = c.
+  Proof.
+    intros ? ? H; induction H.
+    - exists 1. lia.
+    - destruct IHle as [b ?].
+      exists (S b). lia.
+  Qed.
+
+  Lemma nth_error_app_plus : forall A (l l' : list A) n,
+      nth_error (l ++ l') (length l + n) = nth_error l' n.
+  Proof.
+    induction l; intros; simpl in *; eauto.
+  Qed.
+
+  Lemma typ_sub_weak : forall e e' Γ Γ' τ τ',
+      (Γ ++ τ' :: Γ') ⊢ e ∈ τ ->
+      Γ' ⊢ e' ∈ τ' ->
+      (Γ ++ Γ') ⊢ sub (length Γ) e' e ∈ τ.
+  Proof.
+    induction e; intros ? ? ? ? ? He He';
+      inv He; simpl in *; eauto.
+    - destroy_arith.
+      + constructor.
+        Search (nth_error (_ ++ _)).
+        Search (?a < ?c -> exists b, ?a + b = ?c).
+        pose proof doi _ _ l as [b Hb]; subst.
+        Search (nth_error (_ ++ _) (_ + _)).
+        rewrite nth_error_app_plus in H0.
+        Search (pred (_ + _)).
+        rewrite <- Nat.add_pred_r by lia.
+        rewrite nth_error_app_plus.
+        destruct b; try lia; auto.
+      + (** Helper lemma. *) admit.
+      + constructor.
+        rewrite nth_error_app1 in * by lia; auto.
+    - constructor.
+      replace (t :: Γ ++ Γ')
+        with ((t :: Γ) ++ Γ') by reflexivity.
+      replace (S (length Γ))
+        with (length (t :: Γ)) by reflexivity.
+      apply IHe with τ'; simpl; auto.
+  Admitted.
+
+  (** Failed attempts. *)
+  
+  Lemma typ_sub_weak' : forall e e' Γ τ τ' n,
+      Γ ⊢ e ∈ τ ->
+      remove_nth n Γ ⊢ e' ∈ τ' ->
+      skipn (n + 1) Γ ⊢ sub n e' e ∈ τ.
+  Proof.
+    (*induction e; intros ? ? ? ? ? He ?; inv He; simpl in *; eauto.
+    - admit.
+    - constructor. induction Γ; simpl in *.
+      + Hint Rewrite skipn_nil : core.
+        Hint Rewrite remove_nth_of_nil : core.
+        autorewrite with core in *.
+        assert (H' : remove_nth n [t] ⊢ e' ∈ τ') by auto using under_empty.
+        pose proof IHe _ _ _ _ _ H3 H' as IH.
+        
+        
+      replace (remove_nth n Γ)
+        with (remove_nth (S n) (t :: Γ)) in H.
+      + pose proof IHe _ _ _ _ _ H3 H as IH.
+        simpl in IH. admit.
+      + simpl.
+      destruct Γ as [| t' g]; simpl in *; constructor; auto.*)
+  Abort.      
+  
+  Lemma typ_sub_weak' : forall e e' Γ Γ' τ τ',
+      (Γ' ++ τ' :: Γ) ⊢ e ∈ τ ->
+      (Γ' ++ Γ) ⊢ e' ∈ τ' -> Γ ⊢ sub (length Γ') e' e ∈ τ.
+  Proof. (*
+    intros e e' Γ Γ' t t' He.
+    generalize dependent e'.
+    remember (Γ' ++ t' :: Γ) as g eqn:Heqg.
+    generalize dependent Γ'.
+    generalize dependent Γ.
+    dependent induction He; intros; subst; simpl; eauto.
+    - admit.
+    - constructor.
+      replace (S (length Γ')) with (length (τ :: Γ')) by reflexivity.
+      apply IHHe.
+      apply IHHe with (t'0 := t').
+      + simpl. admit.
+      +
+    induction He; intros; subst; simpl in *.
+    - admit.
+    - constructor.
+      replace (S (length Γ')) with (length (τ :: Γ')) by reflexivity.
+      apply IHHe.
+      + admit.
+      + admit.
+    - eauto.
+    induction e; intros ? ? ? ? ? He He'; inv He; simpl; eauto.
+    - destroy_arith.
+      + (** Need Helper Lemma. *) admit.
+      + (** Need Helper Lemma. *) admit.
+      + (** Need Helper Lemma. *) admit.
+    - constructor.
+      replace (S (length Γ')) with (length (t :: Γ')) by reflexivity.
+      apply IHe with (τ' := τ').
+      pose proof IHe e' Γ (t :: Γ') τ'0 τ' H2 as IH.
+      apply IH; simpl.
+      + admit.
+      +
+      apply IHe with (τ' := τ').
+      replace (t :: insert_nth i τ' Γ)
+        with (insert_nth (S i) τ' (t :: Γ))
+        in H2 by reflexivity.
+      replace (t :: skipn i Γ)
+        with (skipn (S i) (t :: Γ)).
+      + admit.
+      + simpl. *)
+  Abort.
+      
     
   Lemma substition_lemma : forall Γ τ τ' e e',
     (τ' :: Γ) ⊢ e ∈ τ -> Γ ⊢ e' ∈ τ' -> Γ ⊢ beta_reduce e e' ∈ τ.
   Proof.
-    intros g t t' e.
-    generalize dependent t';
-      generalize dependent t;
-      generalize dependent g.
-    induction e; intros ? ? ? ? He He'; inv He;
-      unfold beta_reduce, beta_reduce_c in *; simpl in *; eauto 4.
-    - destruct n; simpl in *;
-        autorewrite with core; auto 2.
-      inv H0; assumption.
-    - constructor.
-  Abort.
+    intros ? ? ? ? ? He He'; unfold beta_reduce.
+    replace Γ with ([] ++ Γ) by reflexivity.
+    eapply typ_sub_weak; eauto.
+  Qed.
 End Substituion.
 
 Section Preservation.
@@ -323,6 +577,6 @@ Section Preservation.
     intros ? ? g t He; generalize dependent t;
       generalize dependent g;
       induction He; intros ? ? Ht; inv Ht; eauto.
-    - inv H1. (* TODO: sigh, of course *)
-  Abort.
+    - inv H1. eapply substition_lemma; eauto.
+  Qed.
 End Preservation.
