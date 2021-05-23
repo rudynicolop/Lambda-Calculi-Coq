@@ -326,37 +326,6 @@ Section Substituion.
   Hint Rewrite Nat.eqb_neq : core.
   Hint Rewrite nth_error_nil : core.
 
-  Fixpoint insert_nth {A : Type} (n : nat) (a : A) (l : list A) : list A :=
-    match n with
-    | 0 => a :: l
-    | S n =>
-      match l with
-      | [] => [] (* idk? *)
-      | h :: l => h :: insert_nth n a l
-      end
-    end.
-  (**[]*)
-
-  Lemma insert_nth_length_app : forall (A : Type) l1 l2 (a : A),
-      insert_nth (length l1) a (l1 ++ l2) = l1 ++ a :: l2.
-  Proof. induction l1; intros; simpl; f_equal; auto. Qed.
-
-  Search (skipn _ (?l ++ _)).
-  Lemma skipn_length_app : forall (A : Type) (l1 l2 : list A),
-      skipn (length l1) (l1 ++ l2) = l2.
-  Proof. induction l1; intros; simpl; f_equal; auto. Qed.
-
-  Fixpoint remove_nth {A : Type} (n : nat) (l : list A) : list A :=
-    match n,l with
-    | 0,[] => []
-    | 0, _::t => t
-    | S _, [] => []
-    | S n, h::t => h :: remove_nth n t
-    end.
-
-  Lemma remove_nth_of_nil : forall A n, @remove_nth A n [] = [].
-  Proof. destruct n; reflexivity. Qed.
-
   Lemma nth_error_length : forall A n l (a : A),
       nth_error l n = Some a -> n < length l.
   Proof.
@@ -386,62 +355,6 @@ Section Substituion.
     auto using under_prefix.
   Qed.
 
-  (** [skipn] as a relation, like [trunc]. *)
-  Inductive skip {A : Type} : nat -> list A -> list A -> Prop :=
-  | skip0 l :
-      skip 0 l l
-  | skipS n h t l :
-      skip n t l ->
-      skip (S n) (h :: t) l.
-  (**[]*)
-
-  Lemma skip_skipn : forall A n (l : list A),
-      n <= length l ->
-      skip n l (skipn n l).
-  Proof.
-    Local Hint Constructors skip : core.
-    induction n; destruct l; intros;
-      simpl in *; eauto; try lia.
-    constructor. apply IHn. lia.
-  Qed.
-
-  (** [insert_nth] as a relation, like [sub_in_env]. *)
-  Inductive ins_nth {A : Type} (a : A) : nat -> list A -> list A -> Prop :=
-  | ins_nth0 l :
-      ins_nth a 0 l (a :: l)
-  | ins_nthS n h t l :
-      ins_nth a n t l ->
-      ins_nth a (S n) (h :: t) (h :: l).
-  (**[]*)
-
-  Lemma ins_nth_insert_nth : forall A n (a : A) l,
-      n <= length l ->
-      ins_nth a n l (insert_nth n a l).
-  Proof.
-    Local Hint Constructors ins_nth : core.
-    induction n; intros ? []; intros;
-      simpl in *; try lia; eauto.
-    constructor. apply IHn. lia.
-  Qed.
-
-  Lemma typ_sub_weak : forall e e' g1 g2 g3 t t' n,
-      ins_nth t' n g2 g1 ->
-      skip n g2 g3 ->
-      g1 ⊢ e ∈ t ->
-      g2 ⊢ e' ∈ t' ->
-      g3 ⊢ sub n e' e ∈ t.
-  Proof.
-    induction e; intros ? ? ? ? ? ? ? HI HS He He';
-      inv He; simpl in *; eauto.
-    - admit.
-    - constructor.
-      apply IHe with (g1 := t :: g1) (g2 := t :: g2) (t' := t').
-      + constructor. assumption.
-      + constructor. admit.
-      + assumption.
-      + admit.
-  Abort.
-
   Lemma doi : forall a c,
       a < c -> exists b, a + b = c.
   Proof.
@@ -457,6 +370,54 @@ Section Substituion.
     induction l; intros; simpl in *; eauto.
   Qed.
 
+  (** The following theorem statements
+      are based of the work of the French.
+      [http://www.lix.polytechnique.fr/~barras/CoqInCoq/Types.html] *)
+  
+  Lemma typ_weak_weak : forall e A Γ' Γ T,
+      (Γ' ++ Γ) ⊢ e ∈ T ->
+      (Γ' ++ A :: Γ) ⊢ shift (length Γ') 1 e ∈ T.
+  Proof.
+    induction e; intros ? ? ? ? He;
+      inv He; simpl; eauto; constructor.
+    - destroy_arith.
+      + rewrite nth_error_app1 in * by lia.
+        assumption.
+      + rewrite nth_error_app2 in * by lia.
+        replace (n + 1 - length Γ')
+          with (S (n - length Γ')) by lia.
+        simpl. assumption.
+    - rewrite app_comm_cons.
+      replace (S (length Γ'))
+        with (length (t :: Γ')) by reflexivity.
+      apply IHe. assumption.
+  Qed.
+
+  Lemma thinning : forall e Γ T A,
+      Γ ⊢ e ∈ T ->
+      (A :: Γ) ⊢ shift 0 1 e ∈ T.
+  Proof.
+    intros.
+    replace (A :: Γ)
+      with ([] ++ A :: Γ) by reflexivity.
+    replace 0 with (length (@nil type)) at 1 by reflexivity.
+    apply typ_weak_weak. assumption.
+  Qed.
+
+  Lemma thinning_n : forall Γ' Γ e T,
+      Γ ⊢ e ∈ T ->
+      (Γ' ++ Γ) ⊢ shift 0 (length Γ') e ∈ T.
+  Proof.
+    induction Γ' as [| h t IHt]; intros; simpl.
+    - rewrite shift0. assumption.
+    - pose proof thinning as THIN.
+      pose proof simpl_shift as SS.
+      replace (S (length t))
+        with (1 + length t) by reflexivity.
+      rewrite <- simpl_shift with (i := 0) by lia.
+      apply THIN. apply IHt. assumption.
+  Qed.
+  
   Lemma typ_sub_weak : forall e e' Γ Γ' τ τ',
       (Γ ++ τ' :: Γ') ⊢ e ∈ τ ->
       Γ' ⊢ e' ∈ τ' ->
@@ -466,16 +427,15 @@ Section Substituion.
       inv He; simpl in *; eauto.
     - destroy_arith.
       + constructor.
-        Search (nth_error (_ ++ _)).
-        Search (?a < ?c -> exists b, ?a + b = ?c).
         pose proof doi _ _ l as [b Hb]; subst.
-        Search (nth_error (_ ++ _) (_ + _)).
-        rewrite nth_error_app_plus in H0.
-        Search (pred (_ + _)).
         rewrite <- Nat.add_pred_r by lia.
+        rewrite nth_error_app_plus in H0.
         rewrite nth_error_app_plus.
         destruct b; try lia; auto.
-      + (** Helper lemma. *) admit.
+      + replace n with (length Γ + 0) in H0 by lia.
+        rewrite nth_error_app_plus in H0.
+        simpl in *. inv H0. clear Heqs.
+        apply thinning_n. assumption.
       + constructor.
         rewrite nth_error_app1 in * by lia; auto.
     - constructor.
@@ -484,81 +444,8 @@ Section Substituion.
       replace (S (length Γ))
         with (length (t :: Γ)) by reflexivity.
       apply IHe with τ'; simpl; auto.
-  Admitted.
+  Qed.
 
-  (** Failed attempts. *)
-  
-  Lemma typ_sub_weak' : forall e e' Γ τ τ' n,
-      Γ ⊢ e ∈ τ ->
-      remove_nth n Γ ⊢ e' ∈ τ' ->
-      skipn (n + 1) Γ ⊢ sub n e' e ∈ τ.
-  Proof.
-    (*induction e; intros ? ? ? ? ? He ?; inv He; simpl in *; eauto.
-    - admit.
-    - constructor. induction Γ; simpl in *.
-      + Hint Rewrite skipn_nil : core.
-        Hint Rewrite remove_nth_of_nil : core.
-        autorewrite with core in *.
-        assert (H' : remove_nth n [t] ⊢ e' ∈ τ') by auto using under_empty.
-        pose proof IHe _ _ _ _ _ H3 H' as IH.
-        
-        
-      replace (remove_nth n Γ)
-        with (remove_nth (S n) (t :: Γ)) in H.
-      + pose proof IHe _ _ _ _ _ H3 H as IH.
-        simpl in IH. admit.
-      + simpl.
-      destruct Γ as [| t' g]; simpl in *; constructor; auto.*)
-  Abort.      
-  
-  Lemma typ_sub_weak' : forall e e' Γ Γ' τ τ',
-      (Γ' ++ τ' :: Γ) ⊢ e ∈ τ ->
-      (Γ' ++ Γ) ⊢ e' ∈ τ' -> Γ ⊢ sub (length Γ') e' e ∈ τ.
-  Proof. (*
-    intros e e' Γ Γ' t t' He.
-    generalize dependent e'.
-    remember (Γ' ++ t' :: Γ) as g eqn:Heqg.
-    generalize dependent Γ'.
-    generalize dependent Γ.
-    dependent induction He; intros; subst; simpl; eauto.
-    - admit.
-    - constructor.
-      replace (S (length Γ')) with (length (τ :: Γ')) by reflexivity.
-      apply IHHe.
-      apply IHHe with (t'0 := t').
-      + simpl. admit.
-      +
-    induction He; intros; subst; simpl in *.
-    - admit.
-    - constructor.
-      replace (S (length Γ')) with (length (τ :: Γ')) by reflexivity.
-      apply IHHe.
-      + admit.
-      + admit.
-    - eauto.
-    induction e; intros ? ? ? ? ? He He'; inv He; simpl; eauto.
-    - destroy_arith.
-      + (** Need Helper Lemma. *) admit.
-      + (** Need Helper Lemma. *) admit.
-      + (** Need Helper Lemma. *) admit.
-    - constructor.
-      replace (S (length Γ')) with (length (t :: Γ')) by reflexivity.
-      apply IHe with (τ' := τ').
-      pose proof IHe e' Γ (t :: Γ') τ'0 τ' H2 as IH.
-      apply IH; simpl.
-      + admit.
-      +
-      apply IHe with (τ' := τ').
-      replace (t :: insert_nth i τ' Γ)
-        with (insert_nth (S i) τ' (t :: Γ))
-        in H2 by reflexivity.
-      replace (t :: skipn i Γ)
-        with (skipn (S i) (t :: Γ)).
-      + admit.
-      + simpl. *)
-  Abort.
-      
-    
   Lemma substition_lemma : forall Γ τ τ' e e',
     (τ' :: Γ) ⊢ e ∈ τ -> Γ ⊢ e' ∈ τ' -> Γ ⊢ beta_reduce e e' ∈ τ.
   Proof.
