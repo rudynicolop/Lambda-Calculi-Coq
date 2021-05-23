@@ -467,3 +467,166 @@ Section Preservation.
     - inv H1. eapply substition_lemma; eauto.
   Qed.
 End Preservation.
+
+Notation "e1 '-->*' e2" := (refl_trans_closure step e1 e2) (at level 40).
+
+(** Does a program halt? *)
+Definition halts (e : expr) : Prop :=
+  exists e', e -->* e' /\ normal e'.
+(**[]*)
+
+Section NH.
+  Local Hint Constructors refl_trans_closure : core.
+  
+  Lemma normal_halts : forall e, normal e -> halts e.
+  Proof. intros e ?; unfold halts; eauto 3. Qed.
+End NH.
+
+Inductive closed : nat -> expr -> Prop :=
+| closed_var k n :
+    n < k ->
+    closed k !n
+| closed_lam k t e :
+    closed (S k) e ->
+    closed k (λ t ⇒ e)
+| closed_app k e1 e2 :
+    closed k e1 ->
+    closed k e2 ->
+    closed k (e1 ⋅ e2).
+(**[]*)
+
+(** This predicate is necessary
+    to prove some properties of [R]. *)
+Lemma type_closed : forall Γ e t,
+    Γ ⊢ e ∈ t -> closed (length Γ) e.
+Proof.
+  intros ? ? ? H; induction H;
+    constructor; simpl in *; auto.
+  eapply nth_error_length; eauto.
+Qed.
+
+Section FrenchLemmas.
+  Local Hint Constructors is_lambda : core.
+
+  Lemma sub_is_lambda : forall e es i,
+      is_lambda (sub i es e) -> is_lambda e.
+  Proof.
+    intros ? ? ? H. inv H.
+    destruct e; simpl in *; try discriminate.
+    destruct (lt_eq_lt_dec i n) as [[? | ?] | ?];
+      simpl in *; try discriminate; subst.
+  Abort.
+
+  Local Hint Constructors normal : core.
+
+  Lemma normal_sub : forall e,
+      normal e -> forall i esub, normal (sub i esub e).
+  Proof.
+    intros ? Hnf; induction Hnf;
+      intros; simpl in *; auto.
+    - destroy_arith.
+      subst; clear Heqs.
+      (** Assumption needed. *) admit.
+    - constructor; eauto.
+      (** Helper Lemma! *) admit.
+  Abort.
+  
+  Local Hint Constructors step : core.
+  
+  Lemma sub_step : forall e e' es i,
+    e -->  e' ->
+    sub i es e -->  sub i es e'.
+  Proof.
+    intros ? ? es i H;
+      generalize dependent i;
+      generalize dependent es;
+      induction H; intros; simpl; eauto.
+    - rewrite distr_sub_beta; auto 1.
+    - constructor; eauto.
+      + (** Helper Lemma. *) admit.
+      + (** Helper Lemma. *) admit.
+    - constructor; eauto.
+      (** Helper Lemma. *) admit.
+  Abort.
+  
+  Lemma beta_reduce_step : forall e1 e1' e2,
+    e1 -->  e1' ->
+    beta_reduce e1 e2 -->  beta_reduce e1' e2.
+  Proof.
+    unfold beta_reduce; intros.
+    Fail apply sub_step; assumption.
+  Abort.
+End FrenchLemmas.
+
+(** The Logical Relation. *)
+Fail Inductive R (Γ : list type) : type -> expr -> Prop :=
+| R_base e :
+    halts e ->
+    Γ ⊢ e ∈ ⊥ ->
+    R Γ ⊥ e
+| R_lambda τ τ' e :
+    halts e ->
+    (forall e2, R Γ τ e2 -> R Γ τ' (e ⋅ e2)) ->
+    R Γ (τ → τ') e.
+(**[]*)
+
+(** Oh, wait, oops, my bad. Here it is:*)
+Fixpoint R (Γ : list type) (e : expr) (τ : type) : Prop :=
+  halts e /\ Γ ⊢ e ∈ τ /\
+  match τ with
+  | ⊥ => True
+  | τ → τ' => forall e2, R Γ e2 τ -> R Γ (beta_reduce e e2) τ'
+  end.
+(**[]*)
+
+Lemma R_halts : forall Γ e τ, R Γ e τ -> halts e.
+Proof. destruct τ; simpl; intros; intuition. Qed.
+
+Lemma R_types : forall Γ e τ, R Γ e τ -> Γ ⊢ e ∈ τ.
+Proof. destruct τ; simpl; intros; intuition. Qed.
+
+Section Bot.
+  Lemma nexists_base : ~ exists e, [] ⊢ e ∈ ⊥.
+  Proof.
+    intros [e H]; dependent induction H.
+    - rewrite nth_error_nil in H; discriminate.
+    - intuition.
+  Abort.
+End Bot.
+
+Section PierceLemmas.
+  Local Hint Extern 0 => normal_form_step_contra : core.
+
+  Lemma step_preserves_halting : forall e e',
+    e -->  e' -> halts e -> halts e'.
+  Proof.
+    intros e e' He [e'' [Hs Hnf]]; unfold halts.
+    exists e''; intuition; inv Hs; auto 1.
+    pose proof step_deterministic _ _ _ He H; subst.
+    assumption.
+  Qed.
+
+  Local Hint Constructors refl_trans_closure : core.
+
+  Lemma unstep_preserves_halting : forall e e',
+    e -->  e' -> halts e' -> halts e.
+  Proof.
+    intros ? ? ? [? [? ?]]; unfold halts; eauto 4.
+  Qed.
+
+  Local Hint Resolve R_halts : core.
+  Local Hint Resolve R_types : core.
+  Local Hint Resolve step_preserves_halting : core.
+  Local Hint Resolve preservation : core.
+  Local Hint Constructors step : core.
+  Local Hint Resolve unstep_preserves_halting : core.
+
+  Lemma step_preserves_R : forall τ Γ e e',
+      e -->  e' -> R Γ e τ -> R Γ e' τ.
+  Proof.
+    induction τ; intros;
+      simpl in *; intuition; eauto 3.
+    apply IHτ2 with (beta_reduce e e2); eauto.
+    Fail apply beta_reduce_step; auto.
+  Abort.
+End PierceLemmas.
