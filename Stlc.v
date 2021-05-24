@@ -495,7 +495,7 @@ Inductive closed : nat -> expr -> Prop :=
     closed k (e1 ⋅ e2).
 (**[]*)
 
-(** This predicate is necessary
+(** This property is necessary
     to prove some properties of [R]. *)
 Lemma type_closed : forall Γ e t,
     Γ ⊢ e ∈ t -> closed (length Γ) e.
@@ -505,57 +505,120 @@ Proof.
   eapply nth_error_length; eauto.
 Qed.
 
+Lemma empty_context_closed : forall e t,
+    [] ⊢ e ∈ t -> closed 0 e.
+Proof.
+  intros.
+  replace 0 with (@length type []) by reflexivity.
+  eapply type_closed; eauto 1.
+Qed.
+
 Section FrenchLemmas.
   Local Hint Constructors is_lambda : core.
 
+  Lemma shift_not_lambda : forall e k n,
+      k <= n -> closed k e -> ~ (is_lambda (shift k n e)).
+  Proof.
+    induction e;
+      intros ? ? ? HC HL; inv HL; inv HC.
+    assert (Hkn: S k <= S n) by lia.
+    pose proof IHe _ _ Hkn H2 as IH.
+    destruct e; simpl in *; eauto.
+    - inv H2. admit.
+    - 
+  Abort.
+
   Lemma sub_is_lambda : forall e es i,
+      closed (S i) e -> closed 0 es ->
       is_lambda (sub i es e) -> is_lambda e.
   Proof.
-    intros ? ? ? H. inv H.
-    destruct e; simpl in *; try discriminate.
+    destruct e; intros ? ? HC ? HL;
+      inv HC; inv HL; simpl in *; eauto.
     destruct (lt_eq_lt_dec i n) as [[? | ?] | ?];
-      simpl in *; try discriminate; subst.
+      simpl in *; try discriminate; subst; try lia.
+    exfalso.
   Abort.
 
   Local Hint Constructors normal : core.
+  (* Local Hint Resolve sub_is_lambda : core.*)
+  Local Hint Constructors closed : core.
 
   Lemma normal_sub : forall e,
-      normal e -> forall i esub, normal (sub i esub e).
+      normal e -> forall i esub, closed (S i) e -> normal (sub i esub e).
   Proof.
     intros ? Hnf; induction Hnf;
-      intros; simpl in *; auto.
-    - destroy_arith.
-      subst; clear Heqs.
-      (** Assumption needed. *) admit.
-    - constructor; eauto.
-      (** Helper Lemma! *) admit.
+      intros ? ? HC; inv HC; simpl in *; eauto.
+    - destroy_arith; subst. admit.
+    - constructor; eauto. admit.
   Abort.
   
   Local Hint Constructors step : core.
+  (* Local Hint Resolve normal_sub : core. *)
+
+  Inductive not_lambda : expr -> Prop :=
+  | nl_var n : not_lambda !n
+  | nl_app e1 e2 : not_lambda (e1 ⋅ e2).
+
+  Lemma lemma_shift : forall e k n,
+      k <= n ->
+      closed k e ->
+      not_lambda (shift k n e).
+  Proof.
+    induction e; intros ? ? ? Hc;
+      inv Hc; simpl in *;
+        try (constructor; assumption).
+  Abort.
+
+  Lemma lemma_lemma : forall e1 e2 i,
+      closed (S i) e1 ->
+      closed 0 e2 ->
+      not_lambda e1 ->
+      not_lambda (sub i e2 e1).
+  Proof.
+    induction e1; intros ? ? Hc ? HL; inv HL; inv Hc;
+      simpl in *.
+    destroy_arith; subst.
+    - clear H2 Heqs.
+      assert (0 <= n) by lia.
+    (*- constructor.
+    - constructor; eauto.*)
+  Abort.
   
   Lemma sub_step : forall e e' es i,
-    e -->  e' ->
-    sub i es e -->  sub i es e'.
+      closed (S i) e ->
+      closed 0 es ->
+      e -->  e' ->
+      sub i es e -->  sub i es e'.
   Proof.
-    intros ? ? es i H;
-      generalize dependent i;
+    intros ? ? es i ? ? H.
       generalize dependent es;
-      induction H; intros; simpl; eauto.
+      generalize dependent i.
+      induction H; intros ? Hc; intros;
+        inv Hc; simpl; eauto.
     - rewrite distr_sub_beta; auto 1.
     - constructor; eauto.
-      + (** Helper Lemma. *) admit.
-      + (** Helper Lemma. *) admit.
-    - constructor; eauto.
-      (** Helper Lemma. *) admit.
+      admit. admit.
+    - constructor; eauto. admit.
   Abort.
   
   Lemma beta_reduce_step : forall e1 e1' e2,
-    e1 -->  e1' ->
-    beta_reduce e1 e2 -->  beta_reduce e1' e2.
+      closed 1 e1 ->
+      closed 0 e2 ->
+      e1 -->  e1' ->
+      beta_reduce e1 e2 -->  beta_reduce e1' e2.
   Proof.
     unfold beta_reduce; intros.
     Fail apply sub_step; assumption.
   Abort.
+
+  Lemma closed_closed : forall e m n,
+      m < n -> closed m e -> closed n e.
+  Proof.
+    induction e; intros ? ? ? Hm; inv Hm; eauto.
+    - constructor. lia.
+    - constructor.
+      apply IHe with (S m); auto 1; lia.
+  Qed.
 End FrenchLemmas.
 
 (** The Logical Relation. *)
@@ -575,7 +638,7 @@ Fixpoint R (Γ : list type) (e : expr) (τ : type) : Prop :=
   halts e /\ Γ ⊢ e ∈ τ /\
   match τ with
   | ⊥ => True
-  | τ → τ' => forall e2, R Γ e2 τ -> R Γ (beta_reduce e e2) τ'
+  | τ → τ' => forall e2, R Γ e2 τ -> R Γ (e ⋅ e2) τ'
   end.
 (**[]*)
 
@@ -588,8 +651,8 @@ Proof. destruct τ; simpl; intros; intuition. Qed.
 Section Bot.
   Lemma nexists_base : ~ exists e, [] ⊢ e ∈ ⊥.
   Proof.
-    intros [e H]; dependent induction H.
-    - rewrite nth_error_nil in H; discriminate.
+    intros [e H]. induction e; inv H.
+    - rewrite nth_error_nil in H1; discriminate.
     - intuition.
   Abort.
 End Bot.
@@ -620,13 +683,43 @@ Section PierceLemmas.
   Local Hint Resolve preservation : core.
   Local Hint Constructors step : core.
   Local Hint Resolve unstep_preserves_halting : core.
+  Local Hint Resolve empty_context_closed : core.
+  (*Local Hint Resolve beta_reduce_step : core.*)
+  Local Hint Resolve substition_lemma : core.
+  Local Hint Extern 0 => inv_step_var : core.
 
-  Lemma step_preserves_R : forall τ Γ e e',
-      e -->  e' -> R Γ e τ -> R Γ e' τ.
+  Lemma step_preserves_R : forall τ e e',
+      e -->  e' -> R [] e τ -> R [] e' τ.
   Proof.
     induction τ; intros;
       simpl in *; intuition; eauto 3.
-    apply IHτ2 with (beta_reduce e e2); eauto.
-    Fail apply beta_reduce_step; auto.
+    inv H.
+    (*
+    destruct e; auto.
+    - inv H; intros.
+      apply IHτ2 with (beta_reduce e e2); eauto.
+      apply beta_reduce_step; eauto. admit.
+    - inv H.
+    inv_step_var.
+    destruct (is_lambda_exm e) as [? | ?]; eauto.
+    inv H4. inv H. admit. *)
+  Abort.
+
+  Lemma unstep_preserves_R : forall τ e e',
+     [] ⊢ e ∈ τ -> e -->  e' -> R [] e' τ -> R [] e τ.
+  Proof.
+    induction τ; intros;
+      simpl in *; intuition; eauto.
+    destruct (is_lambda_exm e) as [? | ?].
+    - inv H5. inv H0.
+      apply IHτ2 with (beta_reduce e0 e2); eauto.
+      + constructor 3 with τ1; eauto.
+      + inv H. inv H1.
+        apply IHτ2 with (beta_reduce e'0 e2); eauto.
+        * Fail apply beta_reduce_step; auto.
+          admit.
+        * admit.
+    - apply IHτ2 with (e' ⋅ e2); eauto.
+      constructor 3 with τ1; eauto.
   Abort.
 End PierceLemmas.
