@@ -1,4 +1,5 @@
 Require Import Lambda.Util Coq.Program.Equality.
+Require Import FunctionalExtensionality.
 
 (** * De Bruijn Syntax *)
 
@@ -62,24 +63,6 @@ Qed.
 
 (** * Dynamic Semantics *)
 
-Inductive is_lambda : expr -> Prop :=
-| lambda_is_lambda t e : is_lambda (λ t ⇒ e).
-(**[]*)
-
-(** Normal-form. *)
-Inductive normal : expr -> Prop :=
-| nf_var n :
-    normal !n
-| nf_lam τ e :
-    normal e ->
-    normal (λ τ ⇒ e)
-| nf_app e1 e2 :
-    ~ is_lambda e1 ->
-    normal e1 ->
-    normal e2 ->
-    normal (e1 ⋅ e2).
-(**[]*)
-
 (** Shifts free variables above a cutoff [c] up by [i]. *)
 Fixpoint shift (c i : nat) (e : expr) : expr :=
   match e with
@@ -120,7 +103,9 @@ Section ShiftLemmas.
   Local Hint Extern 0 => rewrite permute_shift by lia; reflexivity : core.
 End ShiftLemmas.
 
-(** Substitution [e{esub/i}]. *)
+(** Substitution [e{esub/i}].
+    [5 6 7 (esub/6) = 4 (shift 0 6 esub) 7]
+ *)
 Fixpoint sub (i : nat) (esub e : expr) : expr :=
   match e with
   | !n => match lt_eq_lt_dec i n with
@@ -196,43 +181,35 @@ Proof.
   apply distr_sub.
 Qed.
 
-(** Normal-order Reduction. *)
+(** Call-by-value Reduction. *)
+
+Inductive value : expr -> Prop :=
+| value_lam t e : value (λ t ⇒ e).
 
 Reserved Notation "e1 '-->' e2" (at level 40).
 
 Inductive step : expr -> expr -> Prop :=
 | step_beta τ e1 e2 :
+    value e2 ->
     (λ τ ⇒ e1) ⋅ e2 -->  beta_reduce e1 e2
-| step_lambda τ e e' :
-    e -->  e' ->
-    λ τ ⇒ e -->  λ τ ⇒ e'
 | step_app_r e1 e2 e2' :
-    ~ is_lambda e1 ->
-    normal e1 ->
+    value e1 ->
     e2 -->  e2' ->
     e1 ⋅ e2 -->  e1 ⋅ e2'
 | step_app_l e1 e1' e2 :
-    ~ is_lambda e1 ->
     e1 -->  e1' ->
     e1 ⋅ e2 -->  e1' ⋅ e2
 where "e1 '-->' e2" := (step e1 e2).
 (**[]*)
 
-Ltac not_is_lambda :=
-  match goal with
-  | H: ~ is_lambda (λ _ ⇒ _) |- _ => exfalso
-  end.
-(**[]*)
-
-Ltac inv_step_var :=
+Ltac inv_step_bad :=
   match goal with
   | H: !_ -->  _ |- _ => inv H
+  | H: λ _ ⇒ _ -->  _ |- _ => inv H
   end.
 
 Section NormalForm.
-  Local Hint Extern 0 => inv_step_var : core.
-  Local Hint Extern 1 => not_is_lambda : core.
-  Local Hint Constructors is_lambda : core.
+  Local Hint Constructors value : core.
 
   Ltac contra_step :=
     match goal with
@@ -242,30 +219,23 @@ Section NormalForm.
 
   Local Hint Extern 0 => contra_step : core.
   
-  Lemma normal_form_step : forall e e',
-      normal e -> ~ e -->  e'.
-  Proof.
-    intros ? e' Hnf; generalize dependent e';
-      induction Hnf; intros ? ?; auto 2.
-    - inv H; auto 1.
-    - inv H0; auto 2.
-  Qed.
+  Lemma value_step : forall e e',
+      value e -> ~ e -->  e'.
+  Proof. intros ? ? Hv He; inv Hv; inv He. Qed.
 End NormalForm.
 
-Ltac normal_form_step_contra :=
+Ltac value_step_contra :=
   match goal with
-  | Hnf: normal ?e, He: ?e -->  _
-    |- _ => pose proof normal_form_step _ _ Hnf He;
+  | Hnf: value ?e, He: ?e -->  _
+    |- _ => pose proof value_step _ _ Hnf He;
           contradiction
   end.
 (**[]*)
 
 Section Determinism.
-  Local Hint Constructors is_lambda : core.
-  Local Hint Extern 1 => not_is_lambda : core.
-  Local Hint Extern 0 => inv_step_var : core.
-  Local Hint Extern 0 => normal_form_step_contra : core.
-  (*Local Hint Resolve normal_form_step : core.*)
+  Local Hint Constructors value : core.
+  Local Hint Extern 0 => inv_step_bad : core.
+  Local Hint Extern 0 => value_step_contra : core.
 
   Theorem step_deterministic : deterministic step.
   Proof. ind_det; f_equal; eauto 2. Qed.
@@ -277,11 +247,10 @@ Section CanonicalForms.
   Proof. intros ? []; reflexivity. Qed.
 
   Hint Rewrite nth_error_nil : core.
-  Local Hint Extern 1 => not_is_lambda : core.
-  Local Hint Constructors is_lambda : core.
+  Local Hint Constructors value : core.
 
-  Lemma is_lambda_exm : forall e,
-      is_lambda e \/ ~ is_lambda e.
+  Lemma value_exm : forall e,
+      value e \/ ~ value e.
   Proof.
     intros [];
       try (right; intros H; inv H; contradiction);
@@ -289,29 +258,31 @@ Section CanonicalForms.
   Qed.
   
   Lemma canonical_forms_lambda : forall e τ τ',
-    normal e -> [] ⊢ e ∈ τ → τ' -> exists e', e = λ τ ⇒ e'.
+    value e -> [] ⊢ e ∈ τ → τ' -> exists e', e = λ τ ⇒ e'.
   Proof.
     intros ? t t' Hnf;
       generalize dependent t';
       generalize dependent t;
       induction Hnf; intros ? ? Ht; inv Ht;
       autorewrite with core in *; try discriminate; eauto 2.
-    apply IHHnf1 in H2 as [? ?]; subst; auto 3.
   Qed.
 End CanonicalForms.
 
 Section Progress.
-  Local Hint Constructors normal : core.
+  Local Hint Constructors value : core.
   Local Hint Constructors step : core.
+  Hint Rewrite nth_error_nil : core.
 
-  Lemma trival_progress : forall e, normal e \/ exists e', e -->  e'.
+  Lemma progress_thm : forall e t,
+      [] ⊢ e ∈ t ->
+      value e \/ exists e', e -->  e'.
   Proof.
-    induction e; eauto 3.
-    - destruct IHe as [? | [? ?]]; eauto 4.
-    - destruct (is_lambda_exm e1) as [HL | ?];
-        try inv HL; eauto 4.
-      destruct IHe1 as [? | [? ?]];
-        destruct IHe2 as [? | [? ?]]; eauto 4.
+    induction e; intros ? Ht; inv Ht;
+      autorewrite with core in *;
+      eauto 3; try discriminate. right.
+    pose proof IHe1 _ H1 as [? | [? ?]]; eauto 3.
+    pose proof IHe2 _ H3 as [? | [? ?]]; eauto 3.
+    pose proof canonical_forms_lambda _ _ _ H H1 as [? ?]; subst; eauto 3.
   Qed.
 End Progress.
 
@@ -464,7 +435,7 @@ Section Preservation.
     intros ? ? g t He; generalize dependent t;
       generalize dependent g;
       induction He; intros ? ? Ht; inv Ht; eauto.
-    - inv H1. eapply substition_lemma; eauto.
+    - inv H2. eapply substition_lemma; eauto.
   Qed.
 End Preservation.
 
@@ -472,14 +443,15 @@ Notation "e1 '-->*' e2" := (refl_trans_closure step e1 e2) (at level 40).
 
 (** Does a program halt? *)
 Definition halts (e : expr) : Prop :=
-  exists e', e -->* e' /\ normal e'.
+  exists e', e -->* e' /\ forall e'', ~ e' -->  e''.
 (**[]*)
 
 Section NH.
   Local Hint Constructors refl_trans_closure : core.
+  Local Hint Resolve value_step : core.
   
-  Lemma normal_halts : forall e, normal e -> halts e.
-  Proof. intros e ?; unfold halts; eauto 3. Qed.
+  Lemma value_halts : forall e, value e -> halts e.
+  Proof. intros ? ?; unfold halts; eauto 4. Qed.
 End NH.
 
 Inductive closed : nat -> expr -> Prop :=
@@ -514,103 +486,38 @@ Proof.
 Qed.
 
 Section FrenchLemmas.
-  Local Hint Constructors is_lambda : core.
+  Local Hint Constructors value : core.
 
-  Lemma shift_not_lambda : forall e k n,
-      k <= n -> closed k e -> ~ (is_lambda (shift k n e)).
+  Lemma value_sub : forall e,
+      value e -> forall i esub, value (sub i esub e).
   Proof.
-    induction e;
-      intros ? ? ? HC HL; inv HL; inv HC.
-    assert (Hkn: S k <= S n) by lia.
-    pose proof IHe _ _ Hkn H2 as IH.
-    destruct e; simpl in *; eauto.
-    - inv H2. admit.
-    - 
-  Abort.
-
-  Lemma sub_is_lambda : forall e es i,
-      closed (S i) e -> closed 0 es ->
-      is_lambda (sub i es e) -> is_lambda e.
-  Proof.
-    destruct e; intros ? ? HC ? HL;
-      inv HC; inv HL; simpl in *; eauto.
-    destruct (lt_eq_lt_dec i n) as [[? | ?] | ?];
-      simpl in *; try discriminate; subst; try lia.
-    exfalso.
-  Abort.
-
-  Local Hint Constructors normal : core.
-  (* Local Hint Resolve sub_is_lambda : core.*)
-  Local Hint Constructors closed : core.
-
-  Lemma normal_sub : forall e,
-      normal e -> forall i esub, closed (S i) e -> normal (sub i esub e).
-  Proof.
-    intros ? Hnf; induction Hnf;
-      intros ? ? HC; inv HC; simpl in *; eauto.
-    - destroy_arith; subst. admit.
-    - constructor; eauto. admit.
-  Abort.
+    intros ? Hv; inv Hv; intros; simpl; auto 1.
+  Qed.
   
   Local Hint Constructors step : core.
-  (* Local Hint Resolve normal_sub : core. *)
-
-  Inductive not_lambda : expr -> Prop :=
-  | nl_var n : not_lambda !n
-  | nl_app e1 e2 : not_lambda (e1 ⋅ e2).
-
-  Lemma lemma_shift : forall e k n,
-      k <= n ->
-      closed k e ->
-      not_lambda (shift k n e).
-  Proof.
-    induction e; intros ? ? ? Hc;
-      inv Hc; simpl in *;
-        try (constructor; assumption).
-  Abort.
-
-  Lemma lemma_lemma : forall e1 e2 i,
-      closed (S i) e1 ->
-      closed 0 e2 ->
-      not_lambda e1 ->
-      not_lambda (sub i e2 e1).
-  Proof.
-    induction e1; intros ? ? Hc ? HL; inv HL; inv Hc;
-      simpl in *.
-    destroy_arith; subst.
-    - clear H2 Heqs.
-      assert (0 <= n) by lia.
-    (*- constructor.
-    - constructor; eauto.*)
-  Abort.
+  Local Hint Resolve value_sub : core.
   
   Lemma sub_step : forall e e' es i,
-      closed (S i) e ->
-      closed 0 es ->
       e -->  e' ->
       sub i es e -->  sub i es e'.
   Proof.
-    intros ? ? es i ? ? H.
+    intros ? ? es i H.
       generalize dependent es;
       generalize dependent i.
-      induction H; intros ? Hc; intros;
-        inv Hc; simpl; eauto.
-    - rewrite distr_sub_beta; auto 1.
-    - constructor; eauto.
-      admit. admit.
-    - constructor; eauto. admit.
-  Abort.
+      induction H; intros; simpl; eauto.
+      rewrite distr_sub_beta; auto 3.
+  Qed.
   
   Lemma beta_reduce_step : forall e1 e1' e2,
-      closed 1 e1 ->
-      closed 0 e2 ->
       e1 -->  e1' ->
       beta_reduce e1 e2 -->  beta_reduce e1' e2.
   Proof.
     unfold beta_reduce; intros.
-    Fail apply sub_step; assumption.
-  Abort.
+    apply sub_step; assumption.
+  Qed.
 
+  Hint Constructors closed : core.
+  
   Lemma closed_closed : forall e m n,
       m < n -> closed m e -> closed n e.
   Proof.
@@ -633,7 +540,7 @@ Fail Inductive R (Γ : list type) : type -> expr -> Prop :=
     R Γ (τ → τ') e.
 (**[]*)
 
-(** Oh, wait, oops, my bad. Here it is:*)
+(** Oh, wait, oops, my bad. Here it is: *)
 Fixpoint R (Γ : list type) (e : expr) (τ : type) : Prop :=
   halts e /\ Γ ⊢ e ∈ τ /\
   match τ with
@@ -658,13 +565,18 @@ Section Bot.
 End Bot.
 
 Section PierceLemmas.
-  Local Hint Extern 0 => normal_form_step_contra : core.
+  Local Hint Extern 0 => value_step_contra : core.
+  Local Hint Extern 0 =>
+  match goal with
+  | H: _, IH: forall _, _ -> False |- _ => apply IH in H; contradiction
+  | H: _, IH: forall _, ~ _ |- _ => apply IH in H; contradiction
+  end : core.
 
   Lemma step_preserves_halting : forall e e',
     e -->  e' -> halts e -> halts e'.
   Proof.
     intros e e' He [e'' [Hs Hnf]]; unfold halts.
-    exists e''; intuition; inv Hs; auto 1.
+    exists e''; inv Hs; intuition.
     pose proof step_deterministic _ _ _ He H; subst.
     assumption.
   Qed.
@@ -682,44 +594,284 @@ Section PierceLemmas.
   Local Hint Resolve step_preserves_halting : core.
   Local Hint Resolve preservation : core.
   Local Hint Constructors step : core.
+  Local Hint Resolve beta_reduce_step : core.
+
+  Lemma step_preserves_R : forall τ Γ e e',
+      e -->  e' -> R Γ e τ -> R Γ e' τ.
+  Proof.
+    induction τ; intros;
+      simpl in *; intuition; eauto 4.
+  Qed.
+
   Local Hint Resolve unstep_preserves_halting : core.
-  Local Hint Resolve empty_context_closed : core.
-  (*Local Hint Resolve beta_reduce_step : core.*)
-  Local Hint Resolve substition_lemma : core.
-  Local Hint Extern 0 => inv_step_var : core.
-
-  Lemma step_preserves_R : forall τ e e',
-      e -->  e' -> R [] e τ -> R [] e' τ.
+  Local Hint Constructors check : core.
+  
+  Lemma unstep_preserves_R : forall τ Γ e e',
+      Γ ⊢ e ∈ τ -> e -->  e' -> R Γ e' τ -> R Γ e τ.
   Proof.
     induction τ; intros;
-      simpl in *; intuition; eauto 3.
-    inv H.
-    (*
-    destruct e; auto.
-    - inv H; intros.
-      apply IHτ2 with (beta_reduce e e2); eauto.
-      apply beta_reduce_step; eauto. admit.
-    - inv H.
-    inv_step_var.
-    destruct (is_lambda_exm e) as [? | ?]; eauto.
-    inv H4. inv H. admit. *)
-  Abort.
+      simpl in *; intuition; eauto 6.
+  Qed.
 
-  Lemma unstep_preserves_R : forall τ e e',
-     [] ⊢ e ∈ τ -> e -->  e' -> R [] e' τ -> R [] e τ.
+  Hint Resolve step_preserves_R : core.
+  
+  Lemma step_star_preserves_R : forall e e' τ Γ,
+      e -->* e' -> R Γ e τ -> R Γ e' τ.
   Proof.
-    induction τ; intros;
+    intros ? ? t g Hms;
+      generalize dependent t;
+      generalize dependent g;
+      induction Hms; intros; eauto 3.
+  Qed.
+
+  Hint Resolve unstep_preserves_R : core.
+
+  Lemma unstep_star_preserves_R : forall e e' τ Γ,
+      Γ ⊢ e ∈ τ -> e -->* e' -> R Γ e' τ -> R Γ e τ.
+  Proof.
+    intros ? ? t g ? Hms;
+      generalize dependent t;
+      generalize dependent g;
+      induction Hms; intros; eauto 4.
+  Qed.
+
+  Local Hint Constructors value : core.
+  Local Hint Unfold halts : core.
+  Local Hint Extern 0 => inv_step_bad : core.
+
+  Lemma check_R : forall τ Γ e,
+      Γ ⊢ e ∈ τ -> R Γ e τ.
+  Proof.
+    intros ? ? ? H; induction H;
       simpl in *; intuition; eauto.
-    destruct (is_lambda_exm e) as [? | ?].
-    - inv H5. inv H0.
-      apply IHτ2 with (beta_reduce e0 e2); eauto.
-      + constructor 3 with τ1; eauto.
-      + inv H. inv H1.
-        apply IHτ2 with (beta_reduce e'0 e2); eauto.
-        * Fail apply beta_reduce_step; auto.
-          admit.
-        * admit.
-    - apply IHτ2 with (e' ⋅ e2); eauto.
-      constructor 3 with τ1; eauto.
+    - destruct τ; simpl; intuition; eauto.
+      admit.
+    (*- 
+    - assert (Γ ⊢ e2 ∈ τ) by eauto.
+      Fail apply progress_thm in H1 as [? | [e2' ?]].
+      destruct (value_exm e2) as [? | ?].
+      + apply unstep_preserves_R with (beta_reduce e e2); eauto.
+        admit.
+      + 
+    - rewrite nth_error_nil in H; discriminate.
+    - clear IHcheck.
+      destruct (value_exm e2) as [? | ?].
+      + apply unstep_preserves_R with (beta_reduce e e2); eauto. *)
+  Abort.
+  
+  Theorem normalization : forall e τ,
+      [] ⊢ e ∈ τ -> halts e.
+  Proof.
+    intros.
+    apply (R_halts [] _ τ).
   Abort.
 End PierceLemmas.
+
+(*
+Lemma app_end_cons : forall A l (a : A),
+    exists h t, l ++ [a] = h :: t.
+Proof. intros ? [] ?; simpl; eauto 3. Qed.
+
+Fixpoint nat_list' (n : nat) : list nat :=
+  match n with
+  | O => []
+  | S n => n :: nat_list' n
+  end.
+(**[]*)
+
+Fixpoint nat_list'' (n : nat) : list nat :=
+  match n with
+  | O => []
+  | S n => nat_list'' n ++ [n]
+  end.
+(**[]*)
+
+Lemma nat_list''_length : forall n, length (nat_list'' n) = n.
+Proof.
+  induction n; simpl; auto.
+  rewrite app_length.
+  rewrite IHn. simpl. lia.
+Qed.
+
+Lemma nat_list''_app_end : forall n,
+    nat_list'' n ++ [n] = 0 :: map S (nat_list'' n).
+Proof.
+  induction n as [| n IHn]; simpl; auto.
+  rewrite map_last. rewrite IHn at 1.
+  reflexivity.
+Qed.
+
+Lemma skipn_map_comm : forall A B (f : A -> B) n l,
+    skipn n (map f l) = map f (skipn n l).
+Proof.
+  induction n; destruct l; simpl; auto 1.
+Qed.
+
+Lemma skipn_nat_list'' : forall n m,
+    skipn n (nat_list'' (n + m)) = map (fun i => n + i) (nat_list'' m).
+Proof.
+  induction n as [| n IHn]; intros m; simpl.
+  - rewrite map_id. reflexivity.
+  - rewrite nat_list''_app_end.
+    rewrite <- map_map
+      with (f := fun i => n + i) (g := S).
+    rewrite skipn_map_comm. f_equal. auto.
+Qed.
+
+Definition nat_list (n : nat) : list nat := rev (nat_list' n).
+
+Lemma nat_list_nat_list'' : forall n,
+    nat_list n = nat_list'' n.
+Proof.
+  intros n; unfold nat_list.
+  induction n; simpl; auto 1.
+  rewrite IHn. reflexivity.
+Qed.
+
+Section FoldLeftIter.
+  Context {A B : Type}.
+  Variable f : nat -> A -> B -> A.
+
+  Fixpoint fold_left_iter' (i : nat) (a : A) (bs : list B) : A :=
+    match bs with
+    | [] => a
+    | b :: bs => fold_left_iter' (S i) (f i a b) bs
+    end.
+  (**[]*)
+
+  Definition fold_left_iter (init : A) (bs : list B) : A :=
+    fold_left_iter' 0 init bs.
+  (**[]*)
+
+  Lemma fold_left_iter'_app : forall l1 l2 i a,
+      fold_left_iter' i a (l1 ++ l2) =
+      fold_left_iter' (i + length l1) (fold_left_iter' i a l1) l2.
+  Proof.
+    induction l1 as [| h1 t1 IHt1]; intros; simpl in *.
+    - f_equal; auto 1; lia.
+    - rewrite IHt1. f_equal; auto 1; lia.
+  Qed.
+
+  Lemma fold_left_iter_app : forall l1 l2 a,
+      fold_left_iter a (l1 ++ l2) =
+      fold_left_iter' (length l1) (fold_left_iter a l1) l2.
+  Proof.
+    intros. unfold fold_left_iter.
+    rewrite fold_left_iter'_app. reflexivity.
+  Qed.
+
+  Lemma fold_left_iter'_fold_left_combine : forall l i a,
+      fold_left_iter' i a l =
+      fold_left
+        (fun a '(i,b) => f i a b)
+        (combine (map (fun m => i + m) (nat_list'' (length l))) l) a.
+  Proof.
+    induction l; intros; simpl; auto 1.
+    rewrite nat_list''_app_end; simpl.
+    rewrite IHl. f_equal.
+    - rewrite map_map. repeat f_equal.
+      extensionality x; lia.
+    - f_equal; lia.
+  Qed.
+
+  Lemma fold_left_iter_fold_left_combine : forall a l,
+      fold_left_iter a l =
+      fold_left
+        (fun a '(i,b) => f i a b)
+        (combine (nat_list'' (length l)) l) a.
+  Proof.
+    intros; unfold fold_left_iter.
+    rewrite fold_left_iter'_fold_left_combine; simpl.
+    rewrite map_id. reflexivity.
+  Qed.
+End FoldLeftIter.
+
+Lemma fold_left_iter'_fold_left : forall A B (f : A -> B -> A) l i a,
+    fold_left_iter' (fun _ a b => f a b) i a l = fold_left f l a.
+Proof.
+  induction l as [| h t IHt]; intros; simpl; auto 1.
+Qed.
+
+Lemma fold_left_iter_fold_left : forall A B (f : A -> B -> A) l a,
+    fold_left_iter (fun _ a b => f a b) a l = fold_left f l a.
+Proof.
+  intros; unfold fold_left_iter.
+  apply fold_left_iter'_fold_left.
+Qed.
+
+(** Pierce's notion of multi-substituions. *)
+Definition msubi (i : nat) (env : list expr) (e : expr) : expr :=
+  fold_left_iter' (fun i e esub => sub i esub e) i e env.
+(**[]*)
+
+Definition msub := msubi 0.
+
+Section PierceLemmas.
+  Lemma sub_closed : forall k i e esub,
+    k <= i ->
+    closed k e ->
+    sub i esub e = e.
+  Proof.
+    intros ? i ? esub ? Hc;
+      generalize dependent esub;
+      generalize dependent i;
+      induction Hc; intros; simpl;
+        try f_equal; auto 2.
+    - destroy_arith.
+    - apply IHHc; lia.
+  Qed.
+
+  (** 
+      [5 6 7 (esub/6) = 4 (shift 0 6 esub) 7]
+      [(5 6 7 (esub/6))(es'/6)
+      = (4 (shift 0 6 esub) 7)(es'/6) = 3 ? 7]
+   *)
+  Lemma duplicate_sub : forall e es es' i,
+      closed 0 es ->
+      sub i es' (sub i es e) = sub i es e.
+  Proof.
+  Abort.
+
+  Lemma swap_sub : forall e es es' i i',
+      i <> i' ->
+      (*k <= i ->
+      k <= i' ->*)
+      closed 0 es ->
+      sub i' es' (sub i es e) = sub i es (sub i' es' e).
+  Proof.
+    induction e; intros; simpl.
+    - destroy_arith; admit.
+    - f_equal. apply IHe; try lia; auto.
+    - f_equal;
+      try rewrite IHe1; try rewrite IHe2; try lia; auto.
+  Abort.
+  
+  Lemma msubi_closed : forall env k i e,
+      k <= i -> closed k e -> msubi i env e = e.
+  Proof.
+    unfold msubi.
+    induction env; intros; simpl; try reflexivity.
+    rewrite sub_closed with (k := k) by auto 1.
+    apply IHenv with (k := k); auto 1. lia.
+  Qed.
+
+  (*Lemma sub_msub : forall env i v e,*)
+
+  Lemma msubi_var : forall env k i n,
+      k <= i ->
+      Forall (closed k) env ->
+      msubi i env !n =
+      match nth_error env n with
+      | None => !n
+      | Some es => shift 0 i es
+      end.
+  Proof.
+    unfold msubi.
+    induction env; intros ? ? ? ? HF;
+      inv HF; simpl.
+    - rewrite nth_error_nil. reflexivity.
+    - destroy_arith; destruct n as [| n];
+        simpl in *; subst; try lia.
+  Abort.
+End PierceLemmas.
+*)
