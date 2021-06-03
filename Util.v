@@ -75,4 +75,8 @@ Section ReflTransClosureProp.
     apply IHHxy in Hyz.
     apply trans_closure with a2; assumption.
   Qed.
+
+  (** "Halting" condition. *)
+  Definition halts_R (a : A) : Prop :=
+    exists a', refl_trans_closure R a a' /\ forall a'', ~ R a' a''.
 End ReflTransClosureProp.

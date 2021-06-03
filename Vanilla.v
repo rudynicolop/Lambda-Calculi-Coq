@@ -206,9 +206,18 @@ End NormalForm.
 
 Notation "e1 '-->*' e2" := (refl_trans_closure step e1 e2) (at level 40).
 
-(** Termination condition. *)
-Definition halts (e e' : expr) : Prop :=
-  e -->* e' /\ normal_form e'.
+Lemma why : forall (X : Type) (P : X -> Prop),
+    (forall x, ~ P x) -> ~ exists x, P x.
+Proof.
+  intros X P HP [x H].
+  apply HP in H. contradiction.
+Qed.
+
+Lemma why' : forall (X : Type) (P : X -> Prop),
+    (~ exists x, P x) -> forall x, ~ P x.
+Proof.
+  intros X P H x HP. eauto.
+Qed.
 
 Section Confluence.
   Local Hint Constructors step : core.
@@ -537,6 +546,21 @@ Section ValueEXM.
   Qed.
 End ValueEXM.
 
+Section NFEXM.
+  Local Hint Constructors normal_form : core.
+
+  Lemma normal_form_exm : forall e, normal_form e \/ ~ normal_form e.
+  Proof.
+    intro e;
+      induction e as [ n
+                     | e [IHe | IHe]
+                     | e1 [IHe1 | IHe1] e2 [IHe2 | IHe2]]; eauto;
+        try (right; intros Hwrong; inv Hwrong; contradiction).
+    destruct (is_lambda_exm e1) as [He1 | ?]; try inv He1; eauto.
+    right; intros Hwrong; inv Hwrong. not_is_lambda_lambda.
+  Qed.
+End NFEXM.
+
 Section InjectStep.
   Local Hint Constructors step : core.
 
@@ -555,47 +579,132 @@ End InjectStep.
 
 Notation "e1 >->* e2" := (refl_trans_closure normal_reduce e1 e2) (at level 40).
 
+Theorem contrapositive : forall P Q : Prop,
+    (P -> Q) -> (~ Q -> ~ P).
+Proof. intuition. Qed.
+
 Section Normalizing.
   Local Hint Resolve inject_trans_closure : core.
-  Local Hint Resolve refl_closure : core.
   Local Hint Constructors normal_reduce : core.
+  Local Hint Constructors refl_trans_closure : core.
+  Local Hint Constructors normal_form : core.
 
   Lemma normal_reduce_lambda : forall e e',
       e >->* e' -> λ e >->* λ e'.
   Proof.
-    intros e e' H; induction H; auto 1.
-    transitivity (λ a2); auto 3.
+    intros e e' H; induction H; eauto 3.
   Qed.
 
-  Lemma normal_reduce_app_l : forall e1 e1' e2,
-      e1 >->* e1' -> e1 ⋅ e2 >->* e1' ⋅ e2.
-  Proof.
-    intros e1 e1' e2 H; induction H; auto 1.
-    transitivity (a2 ⋅ e2); auto 3.
-    apply inject_trans_closure.
-    apply normal_app_l.
-  Abort.
+  Local Hint Resolve normal_form_exm : core.
+  Local Hint Unfold Decidable.decidable : core.
 
-  Lemma normal_reduce_app_r : forall e1 e2 e2',
-      e2 >->* e2' -> e1 ⋅ e2 >->* e1 ⋅ e2'.
+  Lemma nor_normal_form_normal_reduce : forall e,
+      ~ normal_form e -> exists e', e >-> e'.
   Proof.
-    intros e1 e2 e2' H; induction H; auto 1.
-    transitivity (e1 ⋅ a2); auto 3.
-  Abort.
-
-  Local Hint Resolve normal_reduce_lambda : core.
-  (*Local Hint Resolve normal_reduce_app_l : core.*)
-  (*Local Hint Resolve normal_reduce_app_r : core.*)
-  Local Hint Constructors normal_form : core.
+    intro e;
+      induction e as [ n
+                     | e IHe
+                     | e1 IHe1 e2 IHe2 ];
+      intros Hnf; try (exfalso; eauto; contradiction).
+    - pose proof IHe (contrapositive _ _ (nf_lam e) Hnf) as [? ?]; eauto.
+    - pose proof is_lambda_exm e1 as [He1 | He1].
+      + inv He1. eauto.
+      + destruct (normal_form_exm e1) as [Hnf1 | Hnf1].
+        * pose proof IHe2 (contrapositive _ _ (nf_app _ e2 He1 Hnf1) Hnf) as [? ?]; eauto.
+        * pose proof IHe1 Hnf1 as [? ?]; eauto.
+  Qed.
+        
+  Local Hint Resolve normal_step : core.
   
-  Theorem normal_halts : forall e e',
-    halts e e' -> e >->* e'.
+  Lemma step_normal_reduce : forall e e',
+      e -->  e' -> exists e'', e >-> e''.
   Proof.
-    intros e e' [He Hnf].
-    induction He; inv Hnf; auto.
-    - assert (a2 >->* !n) by auto; clear IHHe. admit.
-    - assert (a2 >->* e1 ⋅ e2) by auto; clear IHHe. admit.
-    - assert (a2 >->* λ e) by auto; clear IHHe. admit.
+    intros e e' H; induction H;
+      repeat match goal with
+             | IH: exists _, _ >-> _ |- _ => destruct IH as [? ?]
+             end; eauto;
+    try match goal with
+        | |- exists _, ?e1 ⋅ _ >-> _
+          => destruct (is_lambda_exm e1) as [? | ?];
+              try match goal with
+                  | H: is_lambda _ |- _ => inv H
+                  end; eauto
+        end.
+    destruct (normal_form_exm e1); eauto.
+    apply nor_normal_form_normal_reduce in H2 as [? ?]; eauto.
+  Qed.
+
+  Local Hint Constructors is_lambda : core.
+  
+  Lemma multi_step_lambda : forall e e',
+      λ e -->* e' -> is_lambda e'.
+  Proof.
+    intros e e' H.
+    remember (λ e) as le eqn:Heqle;
+      generalize dependent e.
+    induction H; intros; subst; eauto.
+    inv H. eauto.
+  Qed.
+
+  Lemma multi_step_lambda_step_inner : forall e e',
+      λ e -->* λ e' -> e -->* e'.
+  Proof.
+    intros e e' H.
+    remember (λ e) as le eqn:Heqle;
+      remember (λ e') as le' eqn:Heqle';
+      generalize dependent e';
+      generalize dependent e;
+      induction H; intros; subst.
+    - inv Heqle'. eauto.
+    - inv H. eauto.
+  Qed.
+
+  Theorem multi_step_normal_reduce : forall e e',
+      normal_form e' -> e -->* e' -> e >->* e'.
+  Proof.
+    intros e e' Hnf H; induction H; eauto; intuition.
+    apply step_normal_reduce in H as Hnor.
+    destruct Hnor as [e' Hnor].
+    apply normal_step in Hnor as Hns.
+    Check confluence.
+  Abort.
+  
+  Let halts_step := halts_R step.
+
+  Lemma normal_form_halts : forall e, normal_form e -> halts_step e.
+  Proof.
+    subst halts_step; unfold halts_R.
+    intros e H; exists e. intuition.
+    apply normal_form_step in H0; trivial; contradiction.
+  Qed.
+
+  Let halts_nor := halts_R normal_reduce.
+
+  Local Hint Constructors step : core.
+  Local Hint Resolve normal_reduce_lambda : core.
+
+  Theorem normal_reduce_normalizing : forall e, halts_step e -> halts_nor e.
+  Proof.
+    subst halts_step; subst halts_nor; unfold halts_R.
+    intros e [e' [Hms Hhalt]].
+    induction Hms.
+    - exists a. intuition. eauto.
+    - intuition. (*
+    intro e; induction e as [n | e IHe | e1 IHe1 e2 IHe2];
+      intros [e' [He' He'']].
+    - inv He'.
+      + exists !n. intuition. eauto.
+      + inv H.
+    - apply multi_step_lambda in He' as He'lam; inv He'lam.
+      apply multi_step_lambda_step_inner in He'.
+      assert (He: exists e', e -->* e' /\ forall e'', ~ e' -->  e'').
+      { exists e0; intuition. apply He'' with (λ e''); eauto. }
+      apply IHe in He as [e' [IH IH']].
+      exists (λ e'). intuition; eauto. inv H. eauto.
+    - inv He'.
+      + exists (e1 ⋅ e2). intuition. eauto.
+      + inv H.
+        * *)
   Abort.
 End Normalizing.
 
@@ -606,15 +715,18 @@ Section Examples.
   Local Hint Extern 0 => not_is_lambda_lambda : core.
   Local Hint Constructors is_lambda : core.
 
-  Example omega_does_not_halt :
-    forall e, ~ halts (omega_term ⋅ omega_term) e.
+  Example omega_does_not_halt : ~ halts_R step (omega_term ⋅ omega_term).
   Proof.
-    intros e [Ho Hnf].
+    unfold halts_R; intros [e [Hms Hns]].
     remember (omega_term ⋅ omega_term) as oo eqn:Hoo.
-    induction Ho; subst.
-    - inv Hnf; apply H1; constructor.
-    - apply IHHo; auto; clear a3 Hnf Ho IHHo; inv H; simpl; try reflexivity.
-      + inv H3. inv H0; inv H3.
-      + inv H3. inv H0; inv H3.
+    induction Hms; subst.
+    - apply Hns with (omega_term ⋅ omega_term).
+      constructor.
+    - assert (a2 = omega_term ⋅ omega_term).
+      { clear a3 Hms IHHms Hns.
+        inv H; simpl; auto.
+        + inv H3. inv H0. inv H3. inv H3.
+        + inv H3. inv H0. inv H3. inv H3. }
+      subst. intuition.
   Qed.
 End Examples.
