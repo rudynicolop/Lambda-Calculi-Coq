@@ -644,8 +644,11 @@ Section PierceLemmas.
   Proof.
     intros ? ? ? H; induction H;
       simpl in *; intuition; eauto.
-    - destruct τ; simpl; intuition; eauto.
-      admit.
+    - admit. (* 
+    - generalize dependent n;
+        generalize dependent Γ.
+      induction τ as [| t1 IHt1 t2 IHt2];
+        intros g n H; simpl; intuition; eauto. *)
     (*- 
     - assert (Γ ⊢ e2 ∈ τ) by eauto.
       Fail apply progress_thm in H1 as [? | [e2' ?]].
@@ -667,211 +670,244 @@ Section PierceLemmas.
   Abort.
 End PierceLemmas.
 
-(*
-Lemma app_end_cons : forall A l (a : A),
-    exists h t, l ++ [a] = h :: t.
-Proof. intros ? [] ?; simpl; eauto 3. Qed.
-
-Fixpoint nat_list' (n : nat) : list nat :=
+Fixpoint napply {A : Type} (n : nat) (f : A -> A) (a : A) : A :=
   match n with
-  | O => []
-  | S n => n :: nat_list' n
+  | 0 => a
+  | S n => f (napply n f a)
   end.
 (**[]*)
 
-Fixpoint nat_list'' (n : nat) : list nat :=
-  match n with
-  | O => []
-  | S n => nat_list'' n ++ [n]
-  end.
-(**[]*)
-
-Lemma nat_list''_length : forall n, length (nat_list'' n) = n.
+Lemma napply_succ : forall n k,
+    napply n S k = n + k.
 Proof.
-  induction n; simpl; auto.
-  rewrite app_length.
-  rewrite IHn. simpl. lia.
+  induction n as [| n IHn];
+    intros k; simpl; auto.
 Qed.
 
-Lemma nat_list''_app_end : forall n,
-    nat_list'' n ++ [n] = 0 :: map S (nat_list'' n).
+Lemma napply_pred : forall n k,
+    napply n pred k = k - n.
 Proof.
-  induction n as [| n IHn]; simpl; auto.
-  rewrite map_last. rewrite IHn at 1.
-  reflexivity.
+  induction n as [| n IHn]; intros k; simpl in *.
+  - lia.
+  - rewrite IHn. lia.
 Qed.
 
-Lemma skipn_map_comm : forall A B (f : A -> B) n l,
-    skipn n (map f l) = map f (skipn n l).
-Proof.
-  induction n; destruct l; simpl; auto 1.
-Qed.
+Section MorePierceLemmas.
+  Check fold_left.
+  
+  Lemma msubst_preserves_typing : forall g1 g2 vs e t,
+    Forall2 (R []) vs g1 ->
+    (g1 ++ g2) ⊢ e ∈ t ->
+    g2 ⊢ (fold_left (fun e v => beta_reduce e v) vs e) ∈ t.
+  Proof.
+    intros g1; induction g1; intros g2 vs e t HF2 Het;
+      inv HF2; simpl in *; trivial.
+    apply IHg1; eauto.
+    apply substition_lemma with (τ' := a); auto.
+    apply under_empty. apply R_types. assumption.
+  Qed.
 
-Lemma skipn_nat_list'' : forall n m,
-    skipn n (nat_list'' (n + m)) = map (fun i => n + i) (nat_list'' m).
-Proof.
-  induction n as [| n IHn]; intros m; simpl.
-  - rewrite map_id. reflexivity.
-  - rewrite nat_list''_app_end.
-    rewrite <- map_map
-      with (f := fun i => n + i) (g := S).
-    rewrite skipn_map_comm. f_equal. auto.
-Qed.
+  Lemma subst_closed : forall v e n k,
+      closed k e ->
+      sub (k + n) v e = e.
+  Proof.
+    intros v e n k Hc.
+    generalize dependent v;
+      generalize dependent n.
+    induction Hc; intros m v; simpl in *.
+    - destroy_arith.
+    - f_equal; auto.
+    - f_equal; auto.
+  Qed.
 
-Definition nat_list (n : nat) : list nat := rev (nat_list' n).
+  Lemma msubst_closed : forall vs e n k,
+      closed k e ->
+      fold_left (fun e v => sub (k + n) v e) vs e = e.
+  Proof.
+    intro vs; induction vs as [| v vs IHvs];
+      intros e n k Hc; simpl in *; trivial.
+    rewrite subst_closed by assumption.
+    apply IHvs; trivial.
+  Qed.
 
-Lemma nat_list_nat_list'' : forall n,
-    nat_list n = nat_list'' n.
-Proof.
-  intros n; unfold nat_list.
-  induction n; simpl; auto 1.
-  rewrite IHn. reflexivity.
-Qed.
+  Lemma msubst_closed' : forall vs e n k,
+      closed k e ->
+      fold_left (fun e '((_,v) : nat * _) => sub (k + n) v e) vs e = e.
+  Proof.
+    intro vs; induction vs as [| [m v] vs IHvs];
+      intros e n k Hc; simpl in *; trivial.
+    rewrite subst_closed by assumption.
+    apply IHvs; trivial.
+  Qed.
+    
+  Lemma beta_reduce_closed : forall v e,
+      closed 0 e -> beta_reduce e v = e.
+  Proof.
+    intros v e H; unfold beta_reduce.
+    replace 0 with (0 + 0) by reflexivity.
+    apply subst_closed. assumption.
+  Qed.
+  
+  Lemma multi_beta_reduce_closed : forall vs e,
+      closed 0 e ->
+      fold_left beta_reduce vs e = e.
+  Proof.
+    intros vs e H. unfold beta_reduce.
+    replace 0 with (0 + 0) by reflexivity.
+    rewrite msubst_closed by auto. reflexivity.
+  Qed.
 
-Section FoldLeftIter.
-  Context {A B : Type}.
-  Variable f : nat -> A -> B -> A.
-
-  Fixpoint fold_left_iter' (i : nat) (a : A) (bs : list B) : A :=
-    match bs with
-    | [] => a
-    | b :: bs => fold_left_iter' (S i) (f i a b) bs
+  Lemma multi_beta_reduce_closed' : forall vs e,
+      closed 0 e ->
+      fold_left (fun e '((_,v): nat * _) => beta_reduce e v) vs e = e.
+  Proof.
+    intros vs e H. unfold beta_reduce.
+    replace 0 with (0 + 0) by reflexivity.
+    rewrite msubst_closed' by auto. reflexivity.
+  Qed.
+  
+  Fixpoint nth_tail {A : Type} (i n : nat) (l : list A) : option A :=
+    match l, n - i with
+    | [], _ => None
+    | a :: _, O => Some a
+    | _ :: l, S _ => nth_tail (S i) n l
     end.
   (**[]*)
 
-  Definition fold_left_iter (init : A) (bs : list B) : A :=
-    fold_left_iter' 0 init bs.
+  Lemma nth_tail_plus : forall A (l : list A) n i k,
+      nth_tail (k + i) (k + n) l = nth_tail i n l.
+  Proof.
+    intros A l;
+      induction l as [| a l IHl];
+      intros n i k; simpl in *; auto.
+    Search (?k + _ - (?k + _)).
+    rewrite <- Minus.minus_plus_simpl_l_reverse.
+    replace (S (k + i)) with (k + S i) by lia.
+    rewrite IHl. reflexivity.
+  Qed.
+
+  Lemma nth_tail_nth_error : forall A (l : list A) n i,
+      nth_tail i n l = nth_error l (n - i).
+  Proof.
+    intros A l; induction l as [| a l IHl];
+      intros n i; simpl in *.
+    - rewrite nth_error_nil. reflexivity.
+    - destruct (n - i) eqn:Hni; simpl; auto.
+      destruct n as [| n]; simpl in *; try discriminate.
+      destruct i as [| i]; simpl in *;
+        rewrite IHl; f_equal; lia.
+  Qed.
+
+  Lemma nth_tail0 : forall A (l : list A) n,
+      nth_tail 0 n l = nth_error l n.
+  Proof.
+    intros A l n.
+    rewrite nth_tail_nth_error.
+    f_equal; lia.
+  Qed.
+
+  Fixpoint assoc_get {A : Type} (k : nat) (l : list (nat * A)) : option A :=
+    match l with
+    | [] => None
+    | (k', a) :: l => if k =? k' then Some a else assoc_get k l
+    end.
   (**[]*)
 
-  Lemma fold_left_iter'_app : forall l1 l2 i a,
-      fold_left_iter' i a (l1 ++ l2) =
-      fold_left_iter' (i + length l1) (fold_left_iter' i a l1) l2.
-  Proof.
-    induction l1 as [| h1 t1 IHt1]; intros; simpl in *.
-    - f_equal; auto 1; lia.
-    - rewrite IHt1. f_equal; auto 1; lia.
-  Qed.
-
-  Lemma fold_left_iter_app : forall l1 l2 a,
-      fold_left_iter a (l1 ++ l2) =
-      fold_left_iter' (length l1) (fold_left_iter a l1) l2.
-  Proof.
-    intros. unfold fold_left_iter.
-    rewrite fold_left_iter'_app. reflexivity.
-  Qed.
-
-  Lemma fold_left_iter'_fold_left_combine : forall l i a,
-      fold_left_iter' i a l =
-      fold_left
-        (fun a '(i,b) => f i a b)
-        (combine (map (fun m => i + m) (nat_list'' (length l))) l) a.
-  Proof.
-    induction l; intros; simpl; auto 1.
-    rewrite nat_list''_app_end; simpl.
-    rewrite IHl. f_equal.
-    - rewrite map_map. repeat f_equal.
-      extensionality x; lia.
-    - f_equal; lia.
-  Qed.
-
-  Lemma fold_left_iter_fold_left_combine : forall a l,
-      fold_left_iter a l =
-      fold_left
-        (fun a '(i,b) => f i a b)
-        (combine (nat_list'' (length l)) l) a.
-  Proof.
-    intros; unfold fold_left_iter.
-    rewrite fold_left_iter'_fold_left_combine; simpl.
-    rewrite map_id. reflexivity.
-  Qed.
-End FoldLeftIter.
-
-Lemma fold_left_iter'_fold_left : forall A B (f : A -> B -> A) l i a,
-    fold_left_iter' (fun _ a b => f a b) i a l = fold_left f l a.
-Proof.
-  induction l as [| h t IHt]; intros; simpl; auto 1.
-Qed.
-
-Lemma fold_left_iter_fold_left : forall A B (f : A -> B -> A) l a,
-    fold_left_iter (fun _ a b => f a b) a l = fold_left f l a.
-Proof.
-  intros; unfold fold_left_iter.
-  apply fold_left_iter'_fold_left.
-Qed.
-
-(** Pierce's notion of multi-substituions. *)
-Definition msubi (i : nat) (env : list expr) (e : expr) : expr :=
-  fold_left_iter' (fun i e esub => sub i esub e) i e env.
-(**[]*)
-
-Definition msub := msubi 0.
-
-Section PierceLemmas.
-  Lemma sub_closed : forall k i e esub,
-    k <= i ->
-    closed k e ->
-    sub i esub e = e.
-  Proof.
-    intros ? i ? esub ? Hc;
-      generalize dependent esub;
-      generalize dependent i;
-      induction Hc; intros; simpl;
-        try f_equal; auto 2.
-    - destroy_arith.
-    - apply IHHc; lia.
-  Qed.
-
-  (** 
-      [5 6 7 (esub/6) = 4 (shift 0 6 esub) 7]
-      [(5 6 7 (esub/6))(es'/6)
-      = (4 (shift 0 6 esub) 7)(es'/6) = 3 ? 7]
-   *)
-  Lemma duplicate_sub : forall e es es' i,
-      closed 0 es ->
-      sub i es' (sub i es e) = sub i es e.
-  Proof.
-  Abort.
-
-  Lemma swap_sub : forall e es es' i i',
-      i <> i' ->
-      (*k <= i ->
-      k <= i' ->*)
-      closed 0 es ->
-      sub i' es' (sub i es e) = sub i es (sub i' es' e).
-  Proof.
-    induction e; intros; simpl.
-    - destroy_arith; admit.
-    - f_equal. apply IHe; try lia; auto.
-    - f_equal;
-      try rewrite IHe1; try rewrite IHe2; try lia; auto.
-  Abort.
-  
-  Lemma msubi_closed : forall env k i e,
-      k <= i -> closed k e -> msubi i env e = e.
-  Proof.
-    unfold msubi.
-    induction env; intros; simpl; try reflexivity.
-    rewrite sub_closed with (k := k) by auto 1.
-    apply IHenv with (k := k); auto 1. lia.
-  Qed.
-
-  (*Lemma sub_msub : forall env i v e,*)
-
-  Lemma msubi_var : forall env k i n,
-      k <= i ->
-      Forall (closed k) env ->
-      msubi i env !n =
-      match nth_error env n with
+  Lemma msubst_var'' : forall vs n,
+      Forall (fun '(_,v) => closed 0 v) vs ->
+      fold_left (fun e '(_,v) => beta_reduce e v) vs !n =
+      match assoc_get n vs with
       | None => !n
-      | Some es => shift 0 i es
+      | Some v => beta_reduce !n v
       end.
   Proof.
-    unfold msubi.
-    induction env; intros ? ? ? ? HF;
-      inv HF; simpl.
-    - rewrite nth_error_nil. reflexivity.
-    - destroy_arith; destruct n as [| n];
-        simpl in *; subst; try lia.
+    intro vs; induction vs as [| [k v] vs IHvs];
+      intros n Hvs; inv Hvs; simpl; auto.
+    destruct (n =? k) eqn:Hnk.
+    - unfold beta_reduce at 2 3. simpl.
+      destroy_arith.
+      + rewrite shift0.
+        rewrite multi_beta_reduce_closed'; auto.
+      + rewrite IHvs by auto.
+        destruct (assoc_get n vs) as [nv |] eqn:Hageq; auto.
+        rewrite  beta_reduce_closed; auto.
+        admit.
   Abort.
-End PierceLemmas.
-*)
+    
+
+  Lemma msubst_var' : forall vs n k,
+      Forall (closed 0) vs ->
+      fold_left beta_reduce vs !(n - k) =
+      match nth_tail k n vs with
+      | None => !(n - k)
+      | Some v => v
+      end.
+  Proof.
+    induction vs as [| v vs IHvs];
+      intros n k Hvs; inv Hvs; simpl in *; auto.
+    destruct (n - k) as [| nk] eqn:Hnk; cbn.
+    - rewrite shift0.
+      apply multi_beta_reduce_closed; auto.
+    - destruct n as [| n];
+        destruct k as [| k];
+        simpl in *; try discriminate.
+      + inv Hnk.
+        replace 1 with (1 + 0) by reflexivity.
+        rewrite nth_tail_plus.
+        replace nk with (nk - 0) by lia.
+        rewrite IHvs; auto.
+        admit.
+      + admit.
+  Abort.
+
+  Lemma msubst_var : forall vs n,
+      Forall (closed 0) vs ->
+      fold_left beta_reduce vs !n =
+      match nth_error vs n with
+      | None => !n
+      | Some v => v
+      end.
+  Proof.
+    intro vs; induction vs as [| v vs IHvs];
+      intros n Hvs; simpl in *; inv Hvs.
+    - rewrite nth_error_nil. reflexivity.
+    - destruct n as [| n]; cbn in *.
+      + rewrite shift0.
+        apply multi_beta_reduce_closed; trivial.
+      + rewrite IHvs. admit.
+  Abort.
+
+  Lemma msubst_R_var : forall Γ vs t n,
+      Forall2 (R []) vs Γ ->
+      nth_error Γ n = Some t ->
+      R [] (fold_left beta_reduce vs !n) t.
+  Proof.
+    induction Γ as [| t g IHg];
+      intros vs τ n Hvs Hnth; inv Hvs; simpl in *.
+    - rewrite nth_error_nil in Hnth. discriminate.
+    - cbn. destroy_arith.
+      rewrite shift0. simpl in *. inv Hnth.
+      rewrite multi_beta_reduce_closed; auto.
+      apply R_types in H2.
+      apply type_closed in H2. assumption.
+  Qed.
+
+  Lemma msubst_lam : forall vs τ e k,
+      fold_left (fun e v => sub k v e) vs (λ τ ⇒ e) =
+      λ τ ⇒ (fold_left (fun e v => sub (S k) v e) vs e).
+  Proof.
+    induction vs as [| v vs IHvs]; intros t e k; simpl in *; auto.
+  Qed.
+    
+  Lemma msubst_R : forall Γ vs e t,
+      Forall2 (R []) vs Γ ->
+      Γ ⊢ e ∈ t ->
+      R [] (fold_left beta_reduce vs e) t.
+  Proof.
+    intros g vs e t HF2 Het.
+    generalize dependent vs.
+    induction Het; intros vs Hvs.
+    - eapply msubst_R_var; eauto.
+    - cbn.
+  Abort.
+End MorePierceLemmas.
