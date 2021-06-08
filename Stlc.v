@@ -528,6 +528,7 @@ Section FrenchLemmas.
   Qed.
 End FrenchLemmas.
 
+Module SFPierce.
 (** The Logical Relation. *)
 Fail Inductive R (Γ : list type) : type -> expr -> Prop :=
 | R_base e :
@@ -641,8 +642,6 @@ Section PierceLemmas.
 End PierceLemmas.
 
 Section MorePierceLemmas.
-  Check typ_sub_weak.
-
   Inductive instantiation (g : list type)
     : list type -> list expr -> Prop :=
   | inst_nil :
@@ -806,4 +805,121 @@ Section MorePierceLemmas.
         rewrite app_nil_r. assumption.
       + admit.
   Abort.
+
+  Local Hint Constructors check : core.
+  Local Hint Resolve R_types : core.
+  Local Hint Resolve R_halts : core.
+  Local Hint Unfold halts : core.
+  Local Hint Constructors refl_trans_closure : core.
+  Local Hint Resolve value_halts : core.
+  Local Hint Constructors value : core.
+
+  Lemma types_R : forall g e t,
+      g ⊢ e ∈ t -> R g e t.
+  Proof.
+    intros g e t H.
+    induction H; simpl in *;
+      intuition; eauto.
+    - Check multi_beta_reduce_R_var.
+    (*- destruct τ as [| t1 t2]; simpl in *;
+        intuition; eauto.
+      + exists !n; intuition. inv H0.
+      + exists !n; intuition. inv H0.
+      + admit.
+    - intuition; eauto.
+      admit.
+    - intuition.*)
+  Abort.
 End MorePierceLemmas.
+End SFPierce.
+
+Module FrenchApproach.
+  Definition flip {A : Type} (R : A -> A -> Prop) (a2 a1 : A) := R a1 a2.
+  
+  Definition sn := Acc (flip step).
+
+  Fixpoint R (g : list type) (e : expr) (t : type) : Prop :=
+    g ⊢ e ∈ t /\ sn e /\
+    match t with
+    | ⊥ => True
+    | t → t' => forall e2, R g e2 t -> R g (e ⋅ e2) t'
+    end.
+
+  Section SNHalts.
+        Local Hint Constructors step : core.
+        Local Hint Constructors value : core.
+        
+        Lemma step_exm : forall e,
+            (exists e', e -->  e') \/ forall e', ~ e -->  e'.
+        Proof.
+          induction e as
+              [
+              | t e [[e' IHe] | IHe]
+              | e1 [[e1' IHe1] | IHe1] e2 [[e2' IHe2] | IHe2]]; simpl in *;
+            try (right; intros ? H; inv H; contradiction); eauto.
+          - destruct (value_exm e1) as [He1 | He1]; eauto.
+            right; intros e' He'; inv He'; eauto.
+            apply IHe1 in H2. contradiction.
+          - destruct (value_exm e1) as [He1 | He1];
+              destruct (value_exm e2) as [He2 | He2];
+              try inv He1; eauto;
+                right; intros e' He'; inv He'; eauto.
+            + apply IHe2 in H3; contradiction.
+            + inv H2.
+            + apply IHe1 in H2; contradiction.
+            + apply IHe1 in H2; contradiction.
+        Qed.
+
+        Local Hint Constructors refl_trans_closure : core.
+
+        Lemma sn_halts : forall e,
+            sn e -> halts e.
+        Proof.
+          unfold sn, flip, halts.
+          intros e Hsn.
+          induction Hsn using Acc_inv_dep.
+          destruct (step_exm x) as [[e' IHe'] | IHx]; eauto.
+          apply H in IHe' as IH.
+          destruct IH as [e'' [He' He'']]; eauto.
+        Qed.
+
+        Lemma value_sn : forall e, value e -> sn e.
+        Proof.
+          intros e Hv; inv Hv; unfold sn, flip.
+          constructor. intros ? H; inv H.
+        Qed.
+
+        Lemma step_sn : forall e e',
+            e -->  e' -> sn e -> sn e'.
+        Proof.
+          intros e e' Hs Hsn; unfold sn, flip in *.
+          induction Hs; inv Hsn; eauto.
+        Qed.
+
+        Lemma sub_sn : forall e v i,
+            sn (sub i v e) -> sn e.
+        Proof.
+          induction e as
+              [ n
+              | t e IHe
+              | e1 IHe1 e2 IHe2 ];
+            intros v i Hsn; simpl in *;
+              unfold sn, flip in *; inv Hsn.
+          - admit.
+          - admit.
+        Abort.
+
+        Theorem types_sn : forall Γ e τ,
+            Γ ⊢ e ∈ τ -> sn e.
+        Proof.
+          intros g e t Ht; unfold sn, flip.
+          induction Ht.
+          - constructor; intros ? Hn; inv Hn.
+          - constructor; intros ? Hl; inv Hl.
+          - constructor; intros e' He'; inv He'.
+            + admit.
+            + admit.
+            + admit.
+        Abort.
+  End SNHalts.
+End FrenchApproach.
