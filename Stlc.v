@@ -923,3 +923,155 @@ Module FrenchApproach.
         Abort.
   End SNHalts.
 End FrenchApproach.
+
+Module Abella.
+  (** Abella terms. *)
+  Fail Inductive term : Set :=
+  | term_app (tm1 tm2 : term)
+  | term_lambda (A : type) (body : term -> term).
+
+  (** Abella typing *)
+  Fail Inductive term_of : term -> type -> Prop :=
+  | of_app A B tm1 tm2 :
+      term_of tm1 (A → B) ->
+      term_of tm2 A ->
+      term_of (term_app tm1 tm2) B
+  | of_lambda A B body :
+      (forall tm, term_of tm A -> term_of (body tm) B) ->
+      term_of (term_lambda A body) (A → B).
+  (**[]*)
+  
+  Inductive sn (e : expr) : Prop :=
+  | sn_intro :
+      (forall e', e -->  e' -> sn e') -> sn e.
+
+  Remark sn_var : forall n, sn !n.
+  Proof.
+    intros n. constructor.
+    intros ? H. inv H.
+  Qed.
+
+  Remark sn_lambda : forall t e, sn (λ t ⇒ e).
+  Proof.
+    intros t e. constructor.
+    intros ? H. inv H.
+  Qed.
+
+  Section Sect.
+    Local Hint Constructors step : core.
+    Local Hint Constructors refl_trans_closure : core.
+    Local Hint Resolve inject_trans_closure : core.
+    
+    Lemma sn_halts : forall e, sn e -> halts e.
+    Proof.
+      intros e H; unfold halts.
+      induction H.
+      pose proof FrenchApproach.step_exm e
+        as [[e' He] | He]; eauto.
+      apply H0 in He as Hee.
+      destruct Hee as [e'' [He' He'']]; eauto.
+    Qed.
+
+    Definition neutral (e : expr) : Prop :=
+      forall t bdy, e <> λ t ⇒ bdy.
+    (**[]*)
+
+    Fixpoint R (g : list type) (e : expr) (t : type) : Prop :=
+      g ⊢ e ∈ t /\ sn e /\
+      match t with
+      | ⊥ => True
+      | t1 → t2 => forall ee, R g ee t1 -> R g (e ⋅ ee) t2 
+      end.
+    (**[]*)
+
+    Lemma R_check : forall g e t, R g e t -> g ⊢ e ∈ t.
+    Proof.
+      intros ? ? []; simpl; intuition.
+    Qed.
+
+    Lemma R_sn : forall g e t, R g e t -> sn e.
+    Proof.
+      intros ? ? []; simpl; intuition.
+    Qed.
+
+    Lemma step_sn : forall e e',
+        e -->  e' -> sn e -> sn e'.
+    Proof.
+      intros e e' H Hsn; inv Hsn; eauto.
+    Qed.
+
+    Lemma unstep_sn : forall e e',
+        e -->  e' -> sn e' -> sn e.
+    Proof.
+      intros e e' H Hsn.
+      constructor. intros e'' He''.
+      pose proof step_deterministic _ _ _ H He'';
+        subst; assumption.
+    Qed.
+
+    Local Hint Resolve step_sn : core.
+    Local Hint Resolve preservation : core.
+
+    Lemma step_R : forall t e e' g,
+        e -->  e' -> R g e t -> R g e' t.
+    Proof.
+      intro t; induction t;
+        intros; simpl in *;
+          intuition; eauto 4.
+    Qed.
+
+    Search refl_trans_closure.
+
+    Local Hint Resolve unstep_sn : core.
+    Local Hint Constructors check : core.
+    Local Hint Resolve R_check : core.
+    Local Hint Resolve R_sn : core.
+
+    Lemma unstep_R : forall t g e e',
+        g ⊢ e ∈ t -> e -->  e' -> R g e' t -> R g e t.
+    Proof.
+      intro t; induction t; intros;
+        simpl in *; intuition; eauto 6.
+    Qed.
+
+    Local Hint Resolve step_R : core.
+    Local Hint Resolve unstep_R : core.
+
+    Lemma neutral_unstep : forall t g e e',
+        neutral e -> g ⊢ e ∈ t ->
+        e -->  e' -> R g e' t -> R g e t.
+    Proof.
+      induction t as [| t1 IHt1 t2 IHt2];
+        unfold neutral in *; simpl in *; intuition; eauto.
+      apply IHt2 with (e' := e' ⋅ ee); eauto.
+      intros; discriminate.
+    Qed.
+
+    Local Hint Resolve sn_var : core.
+    Local Hint Resolve sn_lambda : core.
+
+    Lemma br_value_R : forall e1 t t',
+        [t] ⊢ e1 ∈ t' ->
+        (forall e2, value e2 -> R [] e2 t -> R [] (beta_reduce e1 e2) t') ->
+        R [] (λ t ⇒ e1) (t → t').
+    Proof.
+      intros e1 t t' He1 Hbr; simpl.
+      do 2 try split; eauto.
+      (*intros e2 HR
+      intuition.
+      destruct (value_exm ee) as [Hv | Hv]; eauto 7.
+      destruct (FrenchApproach.step_exm ee) as [Hs | Hs].
+      apply unstep_R with (e' := beta_reduce e1 ee); eauto.*)
+    Abort.
+      
+
+    Lemma sub_step_R : forall G g e1 t t',
+        (G ++ t :: g) ⊢ e1 ∈ t' ->
+        (forall e2, R g e2 t -> R (G ++ g) (sub (length G) e2 e1) t') ->
+        R g (λ t ⇒ e1) (t → t').
+    Proof.
+      intros G g e1 t t' He1 Hsub.
+      simpl in *.
+    Abort.
+  End Sect.
+End Abella.

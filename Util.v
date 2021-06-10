@@ -53,27 +53,31 @@ where "a1 '~~>' a2" := (refl_trans_closure _ a1 a2).
 Section ReflTransClosureProp.
   Context {A : Type}.
   Variable (R : A -> A -> Prop).
+
+  Local Hint Constructors refl_trans_closure : core.
   
   Global Instance refl_trans_closure_reflexive
     : Reflexive (refl_trans_closure R).
-  Proof using Type.
-    intros ?; apply refl_closure.
-  Qed.
+  Proof using Type. auto 2. Qed.
 
   Lemma inject_trans_closure : forall a1 a2,
       R a1 a2 -> refl_trans_closure R a1 a2.
-  Proof using Type.
-    intros; apply trans_closure with a2;
-      auto using reflexivity.
-  Qed.
+  Proof using Type. eauto 2. Qed.
 
   Global Instance refl_trans_closure_transitive
     : Transitive (refl_trans_closure R).
   Proof using Type.
     intros x y z Hxy Hyz; generalize dependent z.
-    induction Hxy; intros z Hyz; try assumption.
-    apply IHHxy in Hyz.
-    apply trans_closure with a2; assumption.
+    induction Hxy; intros z Hyz; eauto 3.
+  Qed.
+
+  Lemma trans_closure_r : forall a1 a2 a3,
+      R a2 a3 ->
+      refl_trans_closure R a1 a2 ->
+      refl_trans_closure R a1 a3.
+  Proof.
+    intros a1 a2 a3 HR H12.
+    transitivity a2; eauto 2.
   Qed.
 
   (** "Halting" condition. *)
