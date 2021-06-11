@@ -183,17 +183,27 @@ Qed.
 
 (** Call-by-value Reduction. *)
 
-Inductive value : expr -> Prop :=
-| value_lam t e : value (λ t ⇒ e).
+Inductive is_lam : expr -> Prop :=
+| is_lam_intro t e : is_lam (λ t ⇒ e).
+
+Inductive stuck : expr -> Prop :=
+| stuck_var n :
+    stuck !n
+| stuck_lam t e :
+    stuck (λ t ⇒ e)
+| stuck_app e1 e2 :
+    ~ is_lam e1 ->
+    stuck e1 -> stuck e2 -> stuck (e1 ⋅ e2).
+(**[]*)
 
 Reserved Notation "e1 '-->' e2" (at level 40).
 
 Inductive step : expr -> expr -> Prop :=
 | step_beta τ e1 e2 :
-    value e2 ->
+    stuck e2 ->
     (λ τ ⇒ e1) ⋅ e2 -->  beta_reduce e1 e2
 | step_app_r e1 e2 e2' :
-    value e1 ->
+    stuck e1 ->
     e2 -->  e2' ->
     e1 ⋅ e2 -->  e1 ⋅ e2'
 | step_app_l e1 e1' e2 :
@@ -209,7 +219,7 @@ Ltac inv_step_bad :=
   end.
 
 Section NormalForm.
-  Local Hint Constructors value : core.
+  Local Hint Constructors stuck : core.
 
   Ltac contra_step :=
     match goal with
@@ -218,24 +228,38 @@ Section NormalForm.
     end.
 
   Local Hint Extern 0 => contra_step : core.
+  Local Hint Extern 0 => inv_step_bad : core.
+  Local Hint Constructors is_lam : core.
+
+  Lemma step_nstuck : forall e e',
+      e -->  e' -> ~ stuck e.
+  Proof.
+    intros ? ? Hs Hstk;
+      induction Hs; inv Hstk; eauto.
+  Qed.
   
-  Lemma value_step : forall e e',
-      value e -> ~ e -->  e'.
-  Proof. intros ? ? Hv He; inv Hv; inv He. Qed.
+  Lemma stuck_step : forall e e',
+      stuck e -> ~ e -->  e'.
+  Proof.
+    intros ? e' Hv;
+      generalize dependent e';
+      induction Hv; intros ? He; inv He; eauto.
+  Qed.
 End NormalForm.
 
-Ltac value_step_contra :=
+Ltac stuck_step_contra :=
   match goal with
-  | Hnf: value ?e, He: ?e -->  _
-    |- _ => pose proof value_step _ _ Hnf He;
+  | Hnf: stuck ?e, He: ?e -->  _
+    |- _ => pose proof stuck_step _ _ Hnf He;
           contradiction
   end.
 (**[]*)
 
 Section Determinism.
-  Local Hint Constructors value : core.
+  Local Hint Constructors is_lam : core.
+  Local Hint Constructors stuck : core.
   Local Hint Extern 0 => inv_step_bad : core.
-  Local Hint Extern 0 => value_step_contra : core.
+  Local Hint Extern 0 => stuck_step_contra : core.
 
   Theorem step_deterministic : deterministic step.
   Proof. ind_det; f_equal; eauto 2. Qed.
@@ -247,35 +271,52 @@ Section CanonicalForms.
   Proof. intros ? []; reflexivity. Qed.
 
   Hint Rewrite nth_error_nil : core.
-  Local Hint Constructors value : core.
+  Local Hint Constructors stuck : core.
+  Local Hint Constructors is_lam : core.
 
-  Lemma value_exm : forall e,
-      value e \/ ~ value e.
+  Lemma is_lam_exm : forall e, is_lam e \/ ~ is_lam e.
   Proof.
-    intros [];
-      try (right; intros H; inv H; contradiction);
-      intuition.
+    intros []; intuition;
+      right; intros H; inv H; contradiction.
+  Qed.
+
+  Local Hint Resolve is_lam_exm : core.
+
+  Lemma stuck_exm : forall e,
+      stuck e \/ ~ stuck e.
+  Proof.
+    intro e;
+      induction e as
+        [ n
+        | t e ?
+        | e1 [IHe1 | IHe1] e2 [IHe2 | IHe2]];
+      intuition;
+      try (right; intros H; inv H; contradiction).
+    destruct (is_lam_exm e1); intuition.
+    right; intros H'; inv H'; contradiction.
   Qed.
   
   Lemma canonical_forms_lambda : forall e τ τ',
-    value e -> [] ⊢ e ∈ τ → τ' -> exists e', e = λ τ ⇒ e'.
+    stuck e -> [] ⊢ e ∈ τ → τ' -> exists e', e = λ τ ⇒ e'.
   Proof.
     intros ? t t' Hnf;
       generalize dependent t';
       generalize dependent t;
       induction Hnf; intros ? ? Ht; inv Ht;
-      autorewrite with core in *; try discriminate; eauto 2.
+        autorewrite with core in *; try discriminate; eauto.
+    apply IHHnf1 in H2 as [? ?]; subst.
+    exfalso; eauto.
   Qed.
 End CanonicalForms.
 
 Section Progress.
-  Local Hint Constructors value : core.
+  Local Hint Constructors stuck : core.
   Local Hint Constructors step : core.
   Hint Rewrite nth_error_nil : core.
 
   Lemma progress_thm : forall e t,
       [] ⊢ e ∈ t ->
-      value e \/ exists e', e -->  e'.
+      stuck e \/ exists e', e -->  e'.
   Proof.
     induction e; intros ? Ht; inv Ht;
       autorewrite with core in *;
@@ -441,6 +482,27 @@ End Preservation.
 
 Notation "e1 '-->*' e2" := (refl_trans_closure step e1 e2) (at level 40).
 
+Section MultiStep.
+  Local Hint Constructors step : core.
+  Local Hint Constructors refl_trans_closure : core.
+  
+  Lemma multi_step_app_l : forall e1 e1' e2,
+    e1 -->* e1' -> e1 ⋅ e2 -->*  e1' ⋅ e2.
+  Proof.
+    intros ? ? e2 Hms;
+      generalize dependent e2;
+      induction Hms; eauto.
+  Qed.
+
+  Lemma multi_step_app_r : forall e1 e2 e2',
+      stuck e1 -> e2 -->* e2' -> e1 ⋅ e2 -->*  e1 ⋅ e2'.
+  Proof.
+    intros e1 ? ? ? Hms;
+      generalize dependent e1;
+      induction Hms; eauto.
+  Qed.
+End MultiStep.
+
 (** Does a program halt? *)
 Definition halts (e : expr) : Prop :=
   exists e', e -->* e' /\ forall e'', ~ e' -->  e''.
@@ -448,9 +510,9 @@ Definition halts (e : expr) : Prop :=
 
 Section NH.
   Local Hint Constructors refl_trans_closure : core.
-  Local Hint Resolve value_step : core.
+  Local Hint Resolve stuck_step : core.
   
-  Lemma value_halts : forall e, value e -> halts e.
+  Lemma stuck_halts : forall e, stuck e -> halts e.
   Proof. intros ? ?; unfold halts; eauto 4. Qed.
 End NH.
 
@@ -486,35 +548,60 @@ Proof.
 Qed.
 
 Section FrenchLemmas.
-  Local Hint Constructors value : core.
+  Local Hint Constructors stuck : core.
+  Local Hint Constructors is_lam : core.
 
-  Lemma value_sub : forall e,
-      value e -> forall i esub, value (sub i esub e).
+  Lemma is_lam_shift : forall e k i,
+      is_lam (shift k i e) -> is_lam e.
   Proof.
-    intros ? Hv; inv Hv; intros; simpl; auto 1.
+    intros [] ? ? H; inv H; auto.
   Qed.
+
+  Local Hint Resolve is_lam_shift : core.
+
+  Lemma stuck_shift : forall e k i,
+      stuck e -> stuck (shift k i e).
+  Proof.
+    intros ? k i Hstk;
+      generalize dependent i;
+      generalize dependent k;
+      induction Hstk; simpl;
+        destroy_arith; eauto.
+  Qed.
+
+  Local Hint Resolve stuck_shift : core.
+  
+  Lemma stuck_sub : forall e,
+      stuck e -> forall i esub, stuck esub -> stuck (sub i esub e).
+  Proof.
+    intros ? Hv; induction Hv; intros; simpl; auto.
+    - destroy_arith; auto 1.
+    - constructor; eauto.
+  Abort.
   
   Local Hint Constructors step : core.
-  Local Hint Resolve value_sub : core.
+  (* Local Hint Resolve stuck_sub : core. *)
   
   Lemma sub_step : forall e e' es i,
+      stuck es ->
       e -->  e' ->
       sub i es e -->  sub i es e'.
   Proof.
-    intros ? ? es i H.
+    intros ? ? ? es i H.
       generalize dependent es;
       generalize dependent i.
       induction H; intros; simpl; eauto.
-      rewrite distr_sub_beta; auto 3.
-  Qed.
+      rewrite distr_sub_beta; auto.
+  Abort.
   
   Lemma beta_reduce_step : forall e1 e1' e2,
+      stuck e2 ->
       e1 -->  e1' ->
       beta_reduce e1 e2 -->  beta_reduce e1' e2.
   Proof.
     unfold beta_reduce; intros.
-    apply sub_step; assumption.
-  Qed.
+    Fail apply sub_step; assumption.
+  Abort.
 
   Hint Constructors closed : core.
   
@@ -528,550 +615,369 @@ Section FrenchLemmas.
   Qed.
 End FrenchLemmas.
 
-Module SFPierce.
-(** The Logical Relation. *)
-Fail Inductive R (Γ : list type) : type -> expr -> Prop :=
-| R_base e :
-    halts e ->
-    Γ ⊢ e ∈ ⊥ ->
-    R Γ ⊥ e
-| R_lambda τ τ' e :
-    halts e ->
-    (forall e2, R Γ τ e2 -> R Γ τ' (e ⋅ e2)) ->
-    R Γ (τ → τ') e.
-(**[]*)
+Section StepEXM.
+  Local Hint Constructors step : core.
+  Local Hint Constructors stuck : core.
+  Local Hint Constructors is_lam : core.
 
-(** Oh, wait, oops, my bad. Here it is: *)
-Fixpoint R (Γ : list type) (e : expr) (τ : type) : Prop :=
-  halts e /\ Γ ⊢ e ∈ τ /\
-  match τ with
-  | ⊥ => True
-  | τ → τ' => forall e2, R Γ e2 τ -> R Γ (e ⋅ e2) τ'
+  Lemma nstuck_step_exists : forall e,
+      ~ stuck e -> exists e', e -->  e'.
+  Proof.
+    intro e;
+      induction e as
+        [ n
+        | t e IHe
+        | e1 IHe1 e2 IHe2 ]; intros Hstk;
+        try (exfalso; auto; contradiction).
+    destruct (stuck_exm e1) as [He1 | He1].
+    - destruct (stuck_exm e2) as [He2 | He2].
+      + destruct (is_lam_exm e1) as [Hl1 | Hl1].
+        * inv Hl1; eauto.
+        * exfalso; auto.
+      + apply IHe2 in He2 as [? ?]; eauto.
+    - apply IHe1 in He1 as [? ?]; eauto.
+  Qed.
+
+  Local Hint Resolve nstuck_step_exists : core.
+
+  Lemma nstep_stuck : forall e,
+      (forall e', ~ e -->  e') -> stuck e.
+  Proof.
+    intros e H.
+    destruct (stuck_exm e) as [Hstk | Hstk]; auto.
+    apply nstuck_step_exists in Hstk as [? Hstep].
+    apply H in Hstep. contradiction.
+  Qed.
+        
+  Lemma step_exm : forall e,
+      (exists e', e -->  e') \/ forall e', ~ e -->  e'.
+  Proof.
+    intro e;
+      pose proof stuck_exm e as [H | H];
+      intuition. right; intros e'.
+    eapply stuck_step in H; eauto.
+  Qed.
+End StepEXM.
+
+(** Decidable type equality *)
+Fixpoint type_eqb (a b : type) : bool :=
+  match a, b with
+  | ⊥, ⊥ => true
+  | a1 → a2, b1 → b2 => type_eqb a1 b1 && type_eqb a2 b2
+  | _, _ => false
   end.
 (**[]*)
 
-Lemma R_halts : forall Γ e τ, R Γ e τ -> halts e.
-Proof. destruct τ; simpl; intros; intuition. Qed.
-
-Lemma R_types : forall Γ e τ, R Γ e τ -> Γ ⊢ e ∈ τ.
-Proof. destruct τ; simpl; intros; intuition. Qed.
-
-Section Bot.
-  Lemma nexists_base : ~ exists e, [] ⊢ e ∈ ⊥.
+Section TypeEq.
+  Hint Rewrite Bool.andb_true_iff : core.
+  
+  Lemma type_eqb_refl : forall t, type_eqb t t = true.
   Proof.
-    intros [e H]. induction e; inv H.
-    - rewrite nth_error_nil in H1; discriminate.
-    - intuition.
-  Abort.
-End Bot.
-
-Section PierceLemmas.
-  Local Hint Extern 0 => value_step_contra : core.
-  Local Hint Extern 0 =>
-  match goal with
-  | H: _, IH: forall _, _ -> False |- _ => apply IH in H; contradiction
-  | H: _, IH: forall _, ~ _ |- _ => apply IH in H; contradiction
-  end : core.
-
-  Lemma step_preserves_halting : forall e e',
-    e -->  e' -> halts e -> halts e'.
-  Proof.
-    intros e e' He [e'' [Hs Hnf]]; unfold halts.
-    exists e''; inv Hs; intuition.
-    pose proof step_deterministic _ _ _ He H; subst.
-    assumption.
+    intro t; induction t as [| t1 IHt1 t2 IHt2];
+      simpl; autorewrite with core; firstorder.
   Qed.
 
-  Local Hint Constructors refl_trans_closure : core.
-
-  Lemma unstep_preserves_halting : forall e e',
-    e -->  e' -> halts e' -> halts e.
+  Lemma type_eqb_eq : forall a b,
+      type_eqb a b = true -> a = b.
   Proof.
-    intros ? ? ? [? [? ?]]; unfold halts; eauto 4.
+    intro a;
+      induction a as [| a1 IHa1 a2 IHa2];
+      intros [| b1 b2] Hab; simpl in *;
+        try discriminate; trivial;
+          autorewrite with core in *.
+    destruct Hab as [H1 H2].
+    apply IHa1 in H1; apply IHa2 in H2;
+      subst; trivial.
   Qed.
 
-  Local Hint Resolve R_halts : core.
-  Local Hint Resolve R_types : core.
-  Local Hint Resolve step_preserves_halting : core.
-  Local Hint Resolve preservation : core.
-  Local Hint Constructors step : core.
-  Local Hint Resolve beta_reduce_step : core.
+  Local Hint Resolve type_eqb_eq : core.
+  Local Hint Resolve type_eqb_refl : core.
 
-  Lemma step_preserves_R : forall τ Γ e e',
-      e -->  e' -> R Γ e τ -> R Γ e' τ.
+  Lemma type_eqb_iff : forall a b,
+      type_eqb a b = true <-> a = b.
   Proof.
-    induction τ; intros;
-      simpl in *; intuition; eauto 4.
+    intuition; subst; trivial.
   Qed.
+End TypeEq.
 
-  Local Hint Resolve unstep_preserves_halting : core.
+(** Typing as a function. *)
+Fixpoint typing (g : list type) (e : expr) : option type :=
+  match e with
+  | !n => nth_error g n
+  | λ t ⇒ e =>
+    match typing (t :: g) e with
+    | None => None
+    | Some t' => Some (t → t')
+    end
+  | e1 ⋅ e2 =>
+    match typing g e1, typing g e2 with
+    | Some (t → t'), Some t1 =>
+      if type_eqb t t1 then Some t' else None
+    | _, _ => None
+    end
+  end.
+(**[]*)
+
+Section TypingRefl.
   Local Hint Constructors check : core.
-  
-  Lemma unstep_preserves_R : forall τ Γ e e',
-      Γ ⊢ e ∈ τ -> e -->  e' -> R Γ e' τ -> R Γ e τ.
+  Hint Rewrite type_eqb_iff : core.
+  Hint Rewrite type_eqb_refl : core.
+
+  Lemma check_typing : forall g e t,
+      g ⊢ e ∈ t -> typing g e = Some t.
   Proof.
-    induction τ; intros;
-      simpl in *; intuition; eauto 6.
+    intros g e t H; induction H; simpl;
+      repeat match goal with
+             | IH: typing ?g ?e = Some _
+               |- context [typing ?g ?e]
+               => rewrite IH
+             end;
+      autorewrite with core; trivial.
   Qed.
 
-  Hint Resolve step_preserves_R : core.
-  
-  Lemma step_star_preserves_R : forall e e' τ Γ,
-      e -->* e' -> R Γ e τ -> R Γ e' τ.
+  Lemma typing_check : forall e g t,
+      typing g e = Some t -> g ⊢ e ∈ t.
   Proof.
-    intros ? ? t g Hms;
-      generalize dependent t;
-      generalize dependent g;
-      induction Hms; intros; eauto 3.
+    intro e;
+      induction e as [n | τ e IHe | e1 IHe1 e2 IHe2];
+      intros g t H; simpl in *;
+        repeat match goal with
+               | H: match typing ?g ?e with
+                    | Some _ => _
+                    | None => _
+                    end = Some _
+                 |- _ => destruct (typing g e) eqn:?
+               | H: match ?t with
+                    | ⊥ => _
+                    | _ → _ => _
+                    end = Some _
+                 |- _ => destruct t; simpl in *
+               | H: (if ?trm then _ else _) = Some _
+                 |- _ => destruct trm eqn:?
+               | H: Some _ = Some _ |- _ => inv H
+               end;
+        autorewrite with core in *; subst;
+          eauto; try discriminate.
   Qed.
 
-  Hint Resolve unstep_preserves_R : core.
+  Local Hint Resolve check_typing : core.
+  Local Hint Resolve typing_check : core.
 
-  Lemma unstep_star_preserves_R : forall e e' τ Γ,
-      Γ ⊢ e ∈ τ -> e -->* e' -> R Γ e' τ -> R Γ e τ.
-  Proof.
-    intros ? ? t g ? Hms;
-      generalize dependent t;
-      generalize dependent g;
-      induction Hms; intros; eauto 4.
-  Qed.
+  Lemma check_typing_iff : forall g e t,
+      typing g e = Some t <-> g ⊢ e ∈ t.
+  Proof. intuition. Qed.
+End TypingRefl.
 
-  Local Hint Constructors value : core.
-  Local Hint Unfold halts : core.
-  Local Hint Extern 0 => inv_step_bad : core.
-End PierceLemmas.
-
-Section MorePierceLemmas.
-  Inductive instantiation (g : list type)
-    : list type -> list expr -> Prop :=
-  | inst_nil :
-      instantiation g [] []
-  | inst_cons t ts v vs :
-      instantiation g ts vs ->
-      R (ts ++ g) v t ->
-      instantiation g (t :: ts) (v :: vs).
+Module JapaneseNorm.
+  Definition neutral (e : expr) : Prop :=
+    match e with
+    | !_ | _ ⋅ _ => True
+    | λ _ ⇒ _ => False
+    end.
   (**[]*)
-      
-  Lemma msub_preserves_typing : forall vs ts g' g e t,
-      instantiation g' ts vs ->
-      (g ++ ts ++ g') ⊢ e ∈ t ->
-      (g ++ g') ⊢ (fold_left (fun e v => sub (length g) v e) vs e) ∈ t.
-  Proof.
-    intros vs ts g' g e t H.
-    generalize dependent t;
-      generalize dependent e;
-      generalize dependent g.
-    induction H; intros g e τ He; simpl in *; trivial.
-    apply IHinstantiation; eauto.
-    eapply typ_sub_weak; eauto.
-    apply R_types. assumption.
-  Qed.
-  
-  Lemma multi_beta_reduce_preserves_typing : forall g1 g2 vs e t,
-    Forall2 (R []) vs g1 ->
-    (g1 ++ g2) ⊢ e ∈ t ->
-    g2 ⊢ (fold_left (fun e v => beta_reduce e v) vs e) ∈ t.
-  Proof.
-    intros g1; induction g1; intros g2 vs e t HF2 Het;
-      inv HF2; simpl in *; trivial.
-    apply IHg1; eauto.
-    apply substitution_lemma with (τ' := a); auto.
-    apply under_empty. apply R_types. assumption.
-  Qed.
 
-  Lemma subst_closed : forall v e n k,
-      closed k e ->
-      sub (k + n) v e = e.
-  Proof.
-    intros v e n k Hc.
-    generalize dependent v;
-      generalize dependent n.
-    induction Hc; intros m v; simpl in *.
-    - destroy_arith.
-    - f_equal; auto.
-    - f_equal; auto.
-  Qed.
+  Fixpoint list_hyp_type (t : type) : list type :=
+    match t with
+    | ⊥ => []
+    | t1 → t2 => t1 :: list_hyp_type t1 ++ list_hyp_type t2
+    end.
+  (**[]*)
 
-  Lemma msubst_closed : forall vs e n k,
-      closed k e ->
-      fold_left (fun e v => sub (k + n) v e) vs e = e.
-  Proof.
-    intro vs; induction vs as [| v vs IHvs];
-      intros e n k Hc; simpl in *; trivial.
-    rewrite subst_closed by assumption.
-    apply IHvs; trivial.
-  Qed.
+  Fixpoint list_hyp_expr (g : list type) (e : expr) : list type :=
+    match typing g e with
+    | None => []
+    | Some t => list_hyp_type t
+    end ++
+    match e with
+    | !n => []
+    | λ t ⇒ e => list_hyp_expr (t :: g) e
+    | e1 ⋅ e2 => list_hyp_expr g e1 ++ list_hyp_expr g e2
+    end.
+  (**[]*)
+
+  Section ListHyp.
+    Lemma nth_error_app_l : forall A l1 l2 n (a : A),
+      nth_error l1 n = Some a ->
+      nth_error (l1 ++ l2) n = Some a.
+    Proof.
+      intros A l1 l2 n a H.
+      rewrite nth_error_app1; trivial.
+      eauto using nth_error_length.
+    Qed.
+
+    Lemma typing_app : forall G g e t,
+        typing G e = Some t ->
+        typing (G ++ g) e = Some t.
+    Proof.
+      intros G g e t H.
+      rewrite check_typing_iff.
+      rewrite check_typing_iff in H.
+      apply under_prefix. assumption.
+    Qed.
+
+    Hint Rewrite type_eqb_refl : core.
+    Local Hint Resolve check_typing : core.
     
-  Lemma beta_reduce_closed : forall v e,
-      closed 0 e -> beta_reduce e v = e.
-  Proof.
-    intros v e H; unfold beta_reduce.
-    replace 0 with (0 + 0) by reflexivity.
-    apply subst_closed. assumption.
-  Qed.
+    Lemma list_hyp_app : forall e t G g,
+      G ⊢ e ∈ t -> list_hyp_expr (G ++ g) e = list_hyp_expr G e.
+    Proof.
+      intros e t G g H; generalize dependent g.
+      induction H; intros g; simpl in *.
+      - rewrite H.
+        apply nth_error_app_l with (l2 := g) in H.
+        rewrite H. reflexivity.
+      - rewrite IHcheck.
+        replace (τ :: Γ ++ g)
+          with ((τ :: Γ) ++ g) by reflexivity.
+        rewrite typing_app with (t := τ') by auto.
+        rewrite check_typing
+          with (t := τ') by assumption.
+        reflexivity.
+      - rewrite IHcheck1. rewrite IHcheck2.
+        rewrite (typing_app _ _ e2 τ) by auto;
+          try rewrite (typing_app _ _ e1 (τ → τ')) by auto;
+          autorewrite with core.
+        repeat erewrite check_typing by eauto.
+        autorewrite with core. reflexivity.
+    Qed.
+  End ListHyp.
   
-  Lemma multi_beta_reduce_closed : forall vs e,
-      closed 0 e ->
-      fold_left beta_reduce vs e = e.
-  Proof.
-    intros vs e H. unfold beta_reduce.
-    replace 0 with (0 + 0) by reflexivity.
-    rewrite msubst_closed by auto. reflexivity.
-  Qed.
+  (** Strongly normalizing. *)
+  Inductive SN (e : expr) : Prop :=
+  | SN_intro :
+      (forall e', e -->  e' -> SN e') -> SN e.
+  (**[]*)
 
-  Lemma msub_R_var : forall ts g g' vs t n,
-      instantiation g' ts vs ->
-      nth_error ts n = Some t ->
-      R (g ++ g') (fold_left (fun e v => sub (length g) v e) vs !n) t.
-  Proof.
-    intros ts g g' vs t n H.
-    generalize dependent g;
-      generalize dependent t;
-      generalize dependent n.
-    induction H; intros n τ g Hnth; simpl in *.
-    - rewrite nth_error_nil in Hnth. discriminate.
-    - destroy_arith.
-      + apply IHinstantiation; auto.
-        destruct n as [| n]; simpl in *; try lia; trivial.
-      + subst n. admit.
-      + apply IHinstantiation; auto. admit.
-  Abort.
-  
-  Lemma multi_beta_reduce_R_var : forall Γ vs t n,
-      Forall2 (R []) vs Γ ->
-      nth_error Γ n = Some t ->
-      R [] (fold_left beta_reduce vs !n) t.
-  Proof.
-    induction Γ as [| t g IHg];
-      intros vs τ n Hvs Hnth; inv Hvs; simpl in *.
-    - rewrite nth_error_nil in Hnth. discriminate.
-    - cbn. destroy_arith.
-      rewrite shift0. simpl in *. inv Hnth.
-      rewrite multi_beta_reduce_closed; auto.
-      apply R_types in H2.
-      apply type_closed in H2. assumption.
-  Qed.
-
-  Lemma msubst_lam : forall vs τ e k,
-      fold_left (fun e v => sub k v e) vs (λ τ ⇒ e) =
-      λ τ ⇒ (fold_left (fun e v => sub (S k) v e) vs e).
-  Proof.
-    induction vs as [| v vs IHvs]; intros t e k; simpl in *; auto.
-  Qed.
-
-  Lemma R_prefix : forall t e g g',
-      R g e t ->
-      R (g ++ g') e t.
-  Proof.
-    induction t as [| t1 IHt1 t2 IHt2];
-      intros e g g' H; simpl in *; intuition;
-        auto using under_prefix.
-    apply IHt2. apply H2.
-  Admitted.
-
-  Lemma forall2_instantiation : forall ts vs,
-      Forall2 (R []) vs ts ->
-      instantiation [] ts vs.
-  Proof.
-    induction ts as [| t ts IHts];
-      intros [| v vs] H; inv H.
-    - constructor.
-    - constructor; auto.
-      rewrite app_nil_r.
-      replace ts with ([] ++ ts) by reflexivity.
-      apply R_prefix. assumption.
-  Qed.
+  Section SNProp.
+    Local Hint Constructors refl_trans_closure : core.
     
-  Lemma msubst_R : forall Γ vs e t,
-      Forall2 (R []) vs Γ ->
-      Γ ⊢ e ∈ t ->
-      R [] (fold_left beta_reduce vs e) t.
-  Proof.
-    intros g vs e t HF2 Het.
-    generalize dependent vs.
-    induction Het; intros vs Hvs; simpl.
-    - eapply multi_beta_reduce_R_var; eauto.
-    - repeat split.
-      + unfold beta_reduce.
-        rewrite msubst_lam.
-        apply value_halts. constructor.
-      + unfold beta_reduce.
-        rewrite msubst_lam.
-        constructor.
-        replace [τ] with ([τ] ++ []) by reflexivity.
-        replace 1 with (length [τ]) by reflexivity.
-        eapply msub_preserves_typing; eauto.
-        apply forall2_instantiation; eauto.
-        rewrite app_nil_r. assumption.
-      + admit.
-  Abort.
+    Lemma SN_halts : forall e, SN e -> halts e.
+    Proof.
+      unfold halts; intros e H; induction H.
+      destruct (step_exm e) as [[e' He] | He]; eauto 3.
+      apply H0 in He as He'.
+      destruct He' as [e'' [He' He'']]; eauto 4.
+    Qed.
 
-  Local Hint Constructors check : core.
-  Local Hint Resolve R_types : core.
-  Local Hint Resolve R_halts : core.
-  Local Hint Unfold halts : core.
-  Local Hint Constructors refl_trans_closure : core.
-  Local Hint Resolve value_halts : core.
-  Local Hint Constructors value : core.
+    Local Hint Constructors step : core.
 
-  Lemma types_R : forall g e t,
-      g ⊢ e ∈ t -> R g e t.
-  Proof.
-    intros g e t H.
-    induction H; simpl in *;
-      intuition; eauto.
-    - Check multi_beta_reduce_R_var.
-    (*- destruct τ as [| t1 t2]; simpl in *;
-        intuition; eauto.
-      + exists !n; intuition. inv H0.
-      + exists !n; intuition. inv H0.
-      + admit.
-    - intuition; eauto.
-      admit.
-    - intuition.*)
-  Abort.
-End MorePierceLemmas.
-End SFPierce.
+    Lemma step_SN : forall e e',
+        e -->  e' -> SN e -> SN e'.
+    Proof.
+      intros ? ? ? HSN; inv HSN; eauto.
+    Qed.
 
-Module FrenchApproach.
-  Definition flip {A : Type} (R : A -> A -> Prop) (a2 a1 : A) := R a1 a2.
-  
-  Definition sn := Acc (flip step).
+    Lemma unstep_SN : forall e e',
+        e -->  e' -> SN e' -> SN e.
+    Proof.
+      intros e e' Hs HSN; constructor.
+      intros e'' Hs';
+        pose proof step_deterministic _ _ _ Hs Hs';
+        subst; auto.
+    Qed.
 
+    Local Hint Constructors is_lam : core.
+    Local Hint Constructors stuck : core.
+    Local Hint Resolve step_nstuck : core.
+
+    Lemma stuck_SN : forall v, stuck v -> SN v.
+    Proof.
+      intros ? Hv; induction Hv;
+        constructor; intros ? Hstep; inv Hstep;
+          try (exfalso; eauto; contradiction).
+      - apply step_nstuck in H4. contradiction.
+      - apply step_nstuck in H3. contradiction.
+    Qed.
+
+    Local Hint Resolve nstep_stuck : core.
+    
+    Lemma SN_exists_stuck : forall e,
+        SN e -> exists v, stuck v /\ e -->* v.
+    Proof.
+      intros e Hsn.
+      apply SN_halts in Hsn as [e' [Hms He']]; eauto.
+    Qed.
+  End SNProp.
+
+  (** The logical relation. *)
   Fixpoint R (g : list type) (e : expr) (t : type) : Prop :=
-    g ⊢ e ∈ t /\ sn e /\
+    SN e /\ g ⊢ e ∈ t /\
     match t with
     | ⊥ => True
     | t → t' => forall e2, R g e2 t -> R g (e ⋅ e2) t'
     end.
-
-  Section SNHalts.
-        Local Hint Constructors step : core.
-        Local Hint Constructors value : core.
-        
-        Lemma step_exm : forall e,
-            (exists e', e -->  e') \/ forall e', ~ e -->  e'.
-        Proof.
-          induction e as
-              [
-              | t e [[e' IHe] | IHe]
-              | e1 [[e1' IHe1] | IHe1] e2 [[e2' IHe2] | IHe2]]; simpl in *;
-            try (right; intros ? H; inv H; contradiction); eauto.
-          - destruct (value_exm e1) as [He1 | He1]; eauto.
-            right; intros e' He'; inv He'; eauto.
-            apply IHe1 in H2. contradiction.
-          - destruct (value_exm e1) as [He1 | He1];
-              destruct (value_exm e2) as [He2 | He2];
-              try inv He1; eauto;
-                right; intros e' He'; inv He'; eauto.
-            + apply IHe2 in H3; contradiction.
-            + inv H2.
-            + apply IHe1 in H2; contradiction.
-            + apply IHe1 in H2; contradiction.
-        Qed.
-
-        Local Hint Constructors refl_trans_closure : core.
-
-        Lemma sn_halts : forall e,
-            sn e -> halts e.
-        Proof.
-          unfold sn, flip, halts.
-          intros e Hsn.
-          induction Hsn using Acc_inv_dep.
-          destruct (step_exm x) as [[e' IHe'] | IHx]; eauto.
-          apply H in IHe' as IH.
-          destruct IH as [e'' [He' He'']]; eauto.
-        Qed.
-
-        Lemma value_sn : forall e, value e -> sn e.
-        Proof.
-          intros e Hv; inv Hv; unfold sn, flip.
-          constructor. intros ? H; inv H.
-        Qed.
-
-        Lemma step_sn : forall e e',
-            e -->  e' -> sn e -> sn e'.
-        Proof.
-          intros e e' Hs Hsn; unfold sn, flip in *.
-          induction Hs; inv Hsn; eauto.
-        Qed.
-
-        Lemma sub_sn : forall e v i,
-            sn (sub i v e) -> sn e.
-        Proof.
-          induction e as
-              [ n
-              | t e IHe
-              | e1 IHe1 e2 IHe2 ];
-            intros v i Hsn; simpl in *;
-              unfold sn, flip in *; inv Hsn.
-          - admit.
-          - admit.
-        Abort.
-
-        Theorem types_sn : forall Γ e τ,
-            Γ ⊢ e ∈ τ -> sn e.
-        Proof.
-          intros g e t Ht; unfold sn, flip.
-          induction Ht.
-          - constructor; intros ? Hn; inv Hn.
-          - constructor; intros ? Hl; inv Hl.
-          - constructor; intros e' He'; inv He'.
-            + admit.
-            + admit.
-            + admit.
-        Abort.
-  End SNHalts.
-End FrenchApproach.
-
-Module Abella.
-  (** Abella terms. *)
-  Fail Inductive term : Set :=
-  | term_app (tm1 tm2 : term)
-  | term_lambda (A : type) (body : term -> term).
-
-  (** Abella typing *)
-  Fail Inductive term_of : term -> type -> Prop :=
-  | of_app A B tm1 tm2 :
-      term_of tm1 (A → B) ->
-      term_of tm2 A ->
-      term_of (term_app tm1 tm2) B
-  | of_lambda A B body :
-      (forall tm, term_of tm A -> term_of (body tm) B) ->
-      term_of (term_lambda A body) (A → B).
   (**[]*)
-  
-  Inductive sn (e : expr) : Prop :=
-  | sn_intro :
-      (forall e', e -->  e' -> sn e') -> sn e.
 
-  Remark sn_var : forall n, sn !n.
-  Proof.
-    intros n. constructor.
-    intros ? H. inv H.
-  Qed.
-
-  Remark sn_lambda : forall t e, sn (λ t ⇒ e).
-  Proof.
-    intros t e. constructor.
-    intros ? H. inv H.
-  Qed.
-
-  Section Sect.
+  Section RProp.
+    Local Hint Resolve step_SN : core.
     Local Hint Constructors step : core.
-    Local Hint Constructors refl_trans_closure : core.
-    Local Hint Resolve inject_trans_closure : core.
-    
-    Lemma sn_halts : forall e, sn e -> halts e.
+
+    Lemma R_types : forall g e t, R g e t -> g ⊢ e ∈ t.
     Proof.
-      intros e H; unfold halts.
-      induction H.
-      pose proof FrenchApproach.step_exm e
-        as [[e' He] | He]; eauto.
-      apply H0 in He as Hee.
-      destruct Hee as [e'' [He' He'']]; eauto.
+      intros ? ? []; simpl; firstorder.
     Qed.
 
-    Definition neutral (e : expr) : Prop :=
-      forall t bdy, e <> λ t ⇒ bdy.
-    (**[]*)
-
-    Fixpoint R (g : list type) (e : expr) (t : type) : Prop :=
-      g ⊢ e ∈ t /\ sn e /\
-      match t with
-      | ⊥ => True
-      | t1 → t2 => forall ee, R g ee t1 -> R g (e ⋅ ee) t2 
-      end.
-    (**[]*)
-
-    Lemma R_check : forall g e t, R g e t -> g ⊢ e ∈ t.
+    Lemma R_SN : forall g e t, R g e t -> SN e.
     Proof.
-      intros ? ? []; simpl; intuition.
+      intros ? ? []; simpl; firstorder.
     Qed.
 
-    Lemma R_sn : forall g e t, R g e t -> sn e.
-    Proof.
-      intros ? ? []; simpl; intuition.
-    Qed.
-
-    Lemma step_sn : forall e e',
-        e -->  e' -> sn e -> sn e'.
-    Proof.
-      intros e e' H Hsn; inv Hsn; eauto.
-    Qed.
-
-    Lemma unstep_sn : forall e e',
-        e -->  e' -> sn e' -> sn e.
-    Proof.
-      intros e e' H Hsn.
-      constructor. intros e'' He''.
-      pose proof step_deterministic _ _ _ H He'';
-        subst; assumption.
-    Qed.
-
-    Local Hint Resolve step_sn : core.
     Local Hint Resolve preservation : core.
-
-    Lemma step_R : forall t e e' g,
-        e -->  e' -> R g e t -> R g e' t.
+    
+    Lemma step_R : forall t g e e',
+      e -->  e' -> R g e t -> R g e' t.
     Proof.
-      intro t; induction t;
-        intros; simpl in *;
-          intuition; eauto 4.
+      intro t; induction t; intros;
+        simpl in *; intuition; eauto.
     Qed.
-
-    Search refl_trans_closure.
-
-    Local Hint Resolve unstep_sn : core.
+    
+    Local Hint Resolve unstep_SN : core.
+    Local Hint Resolve R_types : core.
+    Local Hint Resolve R_SN : core.
+    Local Hint Constructors SN : core.
     Local Hint Constructors check : core.
-    Local Hint Resolve R_check : core.
-    Local Hint Resolve R_sn : core.
 
     Lemma unstep_R : forall t g e e',
-        g ⊢ e ∈ t -> e -->  e' -> R g e' t -> R g e t.
+        e -->  e' -> g ⊢ e ∈ t -> R g e' t -> R g e t.
     Proof.
       intro t; induction t; intros;
         simpl in *; intuition; eauto 6.
     Qed.
-
+    
+    Local Hint Unfold neutral : core.
     Local Hint Resolve step_R : core.
     Local Hint Resolve unstep_R : core.
+    Local Hint Constructors stuck : core.
+    Local Hint Resolve stuck_SN : core.
 
-    Lemma neutral_unstep : forall t g e e',
-        neutral e -> g ⊢ e ∈ t ->
-        e -->  e' -> R g e' t -> R g e t.
+    Lemma multi_step_R : forall e e' g t,
+        e -->* e' -> R g e t -> R g e' t.
     Proof.
-      induction t as [| t1 IHt1 t2 IHt2];
-        unfold neutral in *; simpl in *; intuition; eauto.
-      apply IHt2 with (e' := e' ⋅ ee); eauto.
-      intros; discriminate.
+      intros ? ? ? ? Hms;
+        induction Hms; simpl; eauto.
     Qed.
 
-    Local Hint Resolve sn_var : core.
-    Local Hint Resolve sn_lambda : core.
-
-    Lemma br_value_R : forall e1 t t',
-        [t] ⊢ e1 ∈ t' ->
-        (forall e2, value e2 -> R [] e2 t -> R [] (beta_reduce e1 e2) t') ->
-        R [] (λ t ⇒ e1) (t → t').
+    Lemma multi_unstep_R : forall e e' g t,
+        e -->* e' -> g ⊢ e ∈ t -> R g e' t -> R g e t.
     Proof.
-      intros e1 t t' He1 Hbr; simpl.
-      do 2 try split; eauto.
-      (*intros e2 HR
-      intuition.
-      destruct (value_exm ee) as [Hv | Hv]; eauto 7.
-      destruct (FrenchApproach.step_exm ee) as [Hs | Hs].
-      apply unstep_R with (e' := beta_reduce e1 ee); eauto.*)
-    Abort.
-      
+      intros ? ? ? ? Hms;
+        induction Hms; eauto.
+    Qed.
 
-    Lemma sub_step_R : forall G g e1 t t',
-        (G ++ t :: g) ⊢ e1 ∈ t' ->
-        (forall e2, R g e2 t -> R (G ++ g) (sub (length G) e2 e1) t') ->
-        R g (λ t ⇒ e1) (t → t').
+    Local Hint Resolve multi_step_R : core.
+    Local Hint Resolve multi_unstep_R : core.
+    Local Hint Resolve trans_closure_r : core.
+    Local Hint Resolve multi_step_app_r : core.
+
+    Lemma abs_R : forall g e t t',
+        g ⊢ λ t ⇒ e ∈ t → t' ->
+        (forall v, R g v t -> R g (beta_reduce e v) t') ->
+        R g (λ t ⇒ e) (t → t').
     Proof.
-      intros G g e1 t t' He1 Hsub.
-      simpl in *.
-    Abort.
-  End Sect.
-End Abella.
+      intros g e t t' Het HR; simpl; intuition.
+      assert (Hsn : SN e2) by eauto.
+      apply SN_exists_stuck in Hsn as [v [Hvstk Hvms]].
+      apply multi_unstep_R with (e' := beta_reduce e v); eauto.
+    Qed.
+  End RProp.
+End JapaneseNorm.
