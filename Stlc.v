@@ -659,115 +659,6 @@ Section StepEXM.
   Qed.
 End StepEXM.
 
-(** Decidable type equality *)
-Fixpoint type_eqb (a b : type) : bool :=
-  match a, b with
-  | ⊥, ⊥ => true
-  | a1 → a2, b1 → b2 => type_eqb a1 b1 && type_eqb a2 b2
-  | _, _ => false
-  end.
-(**[]*)
-
-Section TypeEq.
-  Hint Rewrite Bool.andb_true_iff : core.
-  
-  Lemma type_eqb_refl : forall t, type_eqb t t = true.
-  Proof.
-    intro t; induction t as [| t1 IHt1 t2 IHt2];
-      simpl; autorewrite with core; firstorder.
-  Qed.
-
-  Lemma type_eqb_eq : forall a b,
-      type_eqb a b = true -> a = b.
-  Proof.
-    intro a;
-      induction a as [| a1 IHa1 a2 IHa2];
-      intros [| b1 b2] Hab; simpl in *;
-        try discriminate; trivial;
-          autorewrite with core in *.
-    destruct Hab as [H1 H2].
-    apply IHa1 in H1; apply IHa2 in H2;
-      subst; trivial.
-  Qed.
-
-  Local Hint Resolve type_eqb_eq : core.
-  Local Hint Resolve type_eqb_refl : core.
-
-  Lemma type_eqb_iff : forall a b,
-      type_eqb a b = true <-> a = b.
-  Proof.
-    intuition; subst; trivial.
-  Qed.
-End TypeEq.
-
-(** Typing as a function. *)
-Fixpoint typing (g : list type) (e : expr) : option type :=
-  match e with
-  | !n => nth_error g n
-  | λ t ⇒ e =>
-    match typing (t :: g) e with
-    | None => None
-    | Some t' => Some (t → t')
-    end
-  | e1 ⋅ e2 =>
-    match typing g e1, typing g e2 with
-    | Some (t → t'), Some t1 =>
-      if type_eqb t t1 then Some t' else None
-    | _, _ => None
-    end
-  end.
-(**[]*)
-
-Section TypingRefl.
-  Local Hint Constructors check : core.
-  Hint Rewrite type_eqb_iff : core.
-  Hint Rewrite type_eqb_refl : core.
-
-  Lemma check_typing : forall g e t,
-      g ⊢ e ∈ t -> typing g e = Some t.
-  Proof.
-    intros g e t H; induction H; simpl;
-      repeat match goal with
-             | IH: typing ?g ?e = Some _
-               |- context [typing ?g ?e]
-               => rewrite IH
-             end;
-      autorewrite with core; trivial.
-  Qed.
-
-  Lemma typing_check : forall e g t,
-      typing g e = Some t -> g ⊢ e ∈ t.
-  Proof.
-    intro e;
-      induction e as [n | τ e IHe | e1 IHe1 e2 IHe2];
-      intros g t H; simpl in *;
-        repeat match goal with
-               | H: match typing ?g ?e with
-                    | Some _ => _
-                    | None => _
-                    end = Some _
-                 |- _ => destruct (typing g e) eqn:?
-               | H: match ?t with
-                    | ⊥ => _
-                    | _ → _ => _
-                    end = Some _
-                 |- _ => destruct t; simpl in *
-               | H: (if ?trm then _ else _) = Some _
-                 |- _ => destruct trm eqn:?
-               | H: Some _ = Some _ |- _ => inv H
-               end;
-        autorewrite with core in *; subst;
-          eauto; try discriminate.
-  Qed.
-
-  Local Hint Resolve check_typing : core.
-  Local Hint Resolve typing_check : core.
-
-  Lemma check_typing_iff : forall g e t,
-      typing g e = Some t <-> g ⊢ e ∈ t.
-  Proof. intuition. Qed.
-End TypingRefl.
-
 Section Forall2Context.
   Context {A B : Type}.
   Variable R : list A -> B -> A -> Prop.
@@ -825,8 +716,6 @@ Module JapaneseNorm.
       firstorder.
     Qed.
 
-    Check fold_right.
-
     Local Hint Resolve sub_closed : core.
 
     Lemma multi_sub_closed_r : forall vs e k n,
@@ -837,8 +726,6 @@ Module JapaneseNorm.
         intros; simpl; trivial.
       rewrite IHvs by assumption; auto.
     Qed.
-    
-    Check typ_sub_weak.
 
     Lemma multi_typ_sub_weak_r : forall vs ts g,
         Forall2 (check g) vs ts ->
@@ -872,6 +759,13 @@ Module JapaneseNorm.
     match vs with
     | [] => e
     | v :: vs => msub n vs (sub (n + length vs) v e)
+    end.
+  (**[]*)
+
+  Fixpoint msub_r (n : nat) (vs : list expr) (e : expr) : expr :=
+    match vs with
+    | [] => e
+    | v :: vs => sub (n + length vs) v (msub_r n vs e)
     end.
   (**[]*)
 
@@ -945,6 +839,15 @@ Module JapaneseNorm.
       repeat f_equal; lia.
     Qed.
 
+    Lemma sub_msub : forall vs n k e v,
+        sub n v (msub (n + k) vs e) = msub n (vs ++ [v]) e.
+    Proof.
+      intro vs; induction vs as [| v vs IHvs];
+        intros n k e e'; simpl.
+      - f_equal; lia.
+      - rewrite IHvs.
+    Abort.
+
     Lemma msub_var : forall vs v k n,
         Forall (closed k) vs ->
         nth_error vs n = Some v ->
@@ -958,83 +861,10 @@ Module JapaneseNorm.
           rewrite shift0. apply msub_closed; auto.
         + inv Hnth. rewrite IHvs with (v := e); auto.
           admit.
-        + rewrite e0. Search shift. admit.
+        + rewrite e0. admit.
         + rewrite IHvs with (v := e); auto.
     Abort.
   End MSub.
-  
-  Definition neutral (e : expr) : Prop :=
-    match e with
-    | !_ | _ ⋅ _ => True
-    | λ _ ⇒ _ => False
-    end.
-  (**[]*)
-
-  Fixpoint list_hyp_type (t : type) : list type :=
-    match t with
-    | ⊥ => []
-    | t1 → t2 => t1 :: list_hyp_type t1 ++ list_hyp_type t2
-    end.
-  (**[]*)
-
-  Fixpoint list_hyp_expr (g : list type) (e : expr) : list type :=
-    match typing g e with
-    | None => []
-    | Some t => list_hyp_type t
-    end ++
-    match e with
-    | !n => []
-    | λ t ⇒ e => list_hyp_expr (t :: g) e
-    | e1 ⋅ e2 => list_hyp_expr g e1 ++ list_hyp_expr g e2
-    end.
-  (**[]*)
-
-  Section ListHyp.
-    Lemma nth_error_app_l : forall A l1 l2 n (a : A),
-      nth_error l1 n = Some a ->
-      nth_error (l1 ++ l2) n = Some a.
-    Proof.
-      intros A l1 l2 n a H.
-      rewrite nth_error_app1; trivial.
-      eauto using nth_error_length.
-    Qed.
-
-    Lemma typing_app : forall G g e t,
-        typing G e = Some t ->
-        typing (G ++ g) e = Some t.
-    Proof.
-      intros G g e t H.
-      rewrite check_typing_iff.
-      rewrite check_typing_iff in H.
-      apply under_prefix. assumption.
-    Qed.
-
-    Hint Rewrite type_eqb_refl : core.
-    Local Hint Resolve check_typing : core.
-    
-    Lemma list_hyp_app : forall e t G g,
-      G ⊢ e ∈ t -> list_hyp_expr (G ++ g) e = list_hyp_expr G e.
-    Proof.
-      intros e t G g H; generalize dependent g.
-      induction H; intros g; simpl in *.
-      - rewrite H.
-        apply nth_error_app_l with (l2 := g) in H.
-        rewrite H. reflexivity.
-      - rewrite IHcheck.
-        replace (τ :: Γ ++ g)
-          with ((τ :: Γ) ++ g) by reflexivity.
-        rewrite typing_app with (t := τ') by auto.
-        rewrite check_typing
-          with (t := τ') by assumption.
-        reflexivity.
-      - rewrite IHcheck1. rewrite IHcheck2.
-        rewrite (typing_app _ _ e2 τ) by auto;
-          try rewrite (typing_app _ _ e1 (τ → τ')) by auto;
-          autorewrite with core.
-        repeat erewrite check_typing by eauto.
-        autorewrite with core. reflexivity.
-    Qed.
-  End ListHyp.
   
   (** Strongly normalizing. *)
   Inductive SN (e : expr) : Prop :=
@@ -1146,7 +976,6 @@ Module JapaneseNorm.
         simpl in *; intuition; eauto 6.
     Qed.
     
-    Local Hint Unfold neutral : core.
     Local Hint Resolve step_R : core.
     Local Hint Resolve unstep_R : core.
     Local Hint Constructors stuck : core.
@@ -1170,6 +999,20 @@ Module JapaneseNorm.
     Local Hint Resolve multi_unstep_R : core.
     Local Hint Resolve trans_closure_r : core.
     Local Hint Resolve multi_step_app_r : core.
+
+    Lemma abs_R_sub : forall g e t t',
+        g ⊢ λ t ⇒ e ∈ t → t' ->
+        (forall G v, R (G ++ g) v t -> R (G ++ g) (sub (length G) v e) t') ->
+        R g (λ t ⇒ e) (t → t').
+    Proof.
+      intros g e t t' Het HR; simpl; intuition.
+      assert (Hsn : SN e2) by eauto.
+      apply SN_exists_stuck in Hsn as [v [Hvstk Hvms]].
+      apply multi_unstep_R with (e' := beta_reduce e v); eauto.
+      unfold beta_reduce.
+      replace 0 with (@length type []) by reflexivity.
+      pose proof HR []; simpl in *; eauto.
+    Qed.
 
     Lemma abs_R : forall g e t t',
         g ⊢ λ t ⇒ e ∈ t → t' ->
@@ -1230,10 +1073,17 @@ Module JapaneseNorm.
       - rewrite msub_lambda.
         replace (S (length G))
           with (length (τ :: G)) by reflexivity.
-        apply abs_R.
+        unfold R; fold R; intuition.
         + constructor.
-          rewrite app_comm_cons. eauto.
-        + intros v HRvt. admit.
+          rewrite app_comm_cons; eauto.
+        + assert (Hsn: SN e2) by eauto.
+          apply SN_exists_stuck in Hsn as [v [Hstk Hms]].
+          apply multi_unstep_R with
+              (e' := beta_reduce (msub (length (τ :: G)) vs e) v); eauto.
+          * constructor 3 with τ; eauto.
+            constructor.
+            rewrite app_comm_cons; eauto.
+          * unfold beta_reduce. admit.
       - rewrite msub_app.
         assert (Hdumb : G ++ rev ts ++ g = G ++ rev ts ++ g)
           by trivial.
