@@ -768,7 +768,201 @@ Section TypingRefl.
   Proof. intuition. Qed.
 End TypingRefl.
 
-Module JapaneseNorm.
+Section Forall2Context.
+  Context {A B : Type}.
+  Variable R : list A -> B -> A -> Prop.
+  Variable ctx : list A.
+
+  Inductive AllCtx2 : list B -> list A -> Prop :=
+  | AllCtx2_nil :
+      AllCtx2 [] []
+  | AllCtx2_cons a la b lb :
+      R (la ++ ctx) b a ->
+      AllCtx2 lb la ->
+      AllCtx2 (b :: lb) (a :: la).
+  (**[]*)
+End Forall2Context.
+
+Lemma Forall2_length : forall A B (R : A -> B -> Prop) a b,
+    Forall2 R a b -> length a = length b.
+Proof.
+  intros A B R a b H; induction H; simpl; auto.
+Qed.
+
+Lemma Forall2_impl : forall A B (P Q : A -> B -> Prop) a b,
+    (forall a b, P a b -> Q a b) ->
+    Forall2 P a b -> Forall2 Q a b.
+Proof.
+  intros A B P Q a b H HP;
+    induction HP; auto.
+Qed.
+
+Lemma rev_nil : forall A (l : list A), rev l = [] -> l = [].
+Proof.
+  intros A l;
+    induction l as [| h t IHt] using rev_ind;
+    intros H; trivial.
+  rewrite rev_unit in H. discriminate.
+Qed.
+
+Module JapaneseNorm.  
+  Section MultiSub.
+    Lemma sub_closed : forall k e,
+      closed k e -> forall n v, sub (k + n) v e = e.
+    Proof.
+      intros k e HC; induction HC;
+        intros; simpl; destroy_arith;
+          f_equal; eauto.
+    Qed.
+
+    Lemma multi_sub_closed_l : forall vs e k n,
+        closed k e ->
+        fold_left (fun e v => sub (k + n) v e) vs e = e.
+    Proof.
+      intro vs; induction vs as [| v vs IHvs];
+        intros; simpl; trivial.
+      rewrite sub_closed by assumption.
+      firstorder.
+    Qed.
+
+    Check fold_right.
+
+    Local Hint Resolve sub_closed : core.
+
+    Lemma multi_sub_closed_r : forall vs e k n,
+        closed k e ->
+        fold_right (sub (k + n)) e vs = e.
+    Proof.
+      intro vs; induction vs as [| v vs IHvs];
+        intros; simpl; trivial.
+      rewrite IHvs by assumption; auto.
+    Qed.
+    
+    Check typ_sub_weak.
+
+    Lemma multi_typ_sub_weak_r : forall vs ts g,
+        Forall2 (check g) vs ts ->
+        forall G e t,
+          (G ++ ts ++ g) ⊢ e ∈ t ->
+          (G ++ g) ⊢ fold_right (sub (length G)) e vs ∈ t.
+    Proof.
+      intro vs;
+        induction vs as [| v vs IHvs];
+        intros [| t ts] g HF2 G e τ Het;
+        inv HF2; simpl in *; trivial.
+      eapply typ_sub_weak; eauto.
+    Abort.
+
+    Lemma multi_typ_sub_weak_l : forall vs ts g,
+        Forall2 (check g) vs ts ->
+        forall G e t,
+          (G ++ ts ++ g) ⊢ e ∈ t ->
+          (G ++ g) ⊢ fold_left (fun e v => sub (length G) v e) vs e ∈ t.
+    Proof.
+      intro vs;
+        induction vs as [| v vs IHvs];
+        intros ts g Hvs; inv Hvs;
+          intros G e τ Het; simpl; trivial.
+      eapply IHvs; eauto.
+      eapply typ_sub_weak; eauto.
+    Abort.        
+  End MultiSub.
+
+  Fixpoint msub (n : nat) (vs : list expr) (e : expr) : expr :=
+    match vs with
+    | [] => e
+    | v :: vs => msub n vs (sub (n + length vs) v e)
+    end.
+  (**[]*)
+
+  Section MSub.
+    Lemma msub_closed : forall vs e k,
+      closed k e ->
+      msub k vs e = e.
+    Proof.
+      intro vs;
+        induction vs as [| v vs IHvs];
+        intros e k Hek; simpl; trivial.
+      rewrite sub_closed by assumption; auto.
+    Qed.
+
+    Lemma typ_msub_weak : forall vs ts g,
+        Forall2 (check g) vs ts ->
+        forall G e t,
+          (G ++ rev ts ++ g) ⊢ e ∈ t ->
+          (G ++ g) ⊢ msub (length G) vs e ∈ t.
+    Proof.
+      intro vs;
+        induction vs as [| v vs IHvs];
+        intros [| t ts] g HF2 G e τ Het;
+        inv HF2; simpl in *; trivial.
+      apply IHvs with (ts := ts); auto.
+      assert (Hlen : length vs = length ts) by eauto using Forall2_length.
+      rewrite Hlen. rewrite <- (rev_length ts).
+      rewrite <- app_length. rewrite app_assoc.
+      eapply typ_sub_weak; eauto.
+      rewrite <- app_assoc in Het; simpl in Het.
+      rewrite app_assoc in Het. assumption.
+    Qed.
+
+    Lemma msub_lambda : forall vs e t n,
+        msub n vs (λ t ⇒ e) = λ t ⇒ (msub (S n) vs e).
+    Proof.
+      intro vs; induction vs as [| v vs IHvs];
+        intros e t n; simpl; trivial.
+    Qed.
+
+    Lemma msub_app : forall vs e1 e2 n,
+        msub n vs (e1 ⋅ e2) = (msub n vs e1) ⋅ (msub n vs e2).
+    Proof.
+      intro vs; induction vs as [| v vs IHvs];
+        intros e1 e2 n; simpl; trivial.
+    Qed.
+
+    Lemma msub_single : forall n v e,
+        msub n [v] e = sub n v e.
+    Proof.
+      intros n v e; simpl.
+      rewrite Nat.add_comm. reflexivity.
+    Qed.
+
+    Lemma msub_append : forall vs1 vs2 e n,
+        msub n (vs1 ++ vs2) e = msub n vs2 (msub (n + length vs2) vs1 e).
+    Proof.
+      intro vs1; induction vs1 as [| v1 vs1 IHvs1];
+        intros vs2 e n; simpl; trivial.
+      rewrite IHvs1. rewrite app_length.
+      rewrite (Nat.add_comm (length vs1) (length vs2)).
+      rewrite Nat.add_assoc. reflexivity.
+    Qed.
+
+    Lemma msub_sub : forall vs n e v,
+        sub n v (msub (S n) vs e) = msub n (vs ++ [v]) e.
+    Proof.
+      intros vs n e v.
+      rewrite <- msub_single.
+      rewrite msub_append; simpl.
+      repeat f_equal; lia.
+    Qed.
+
+    Lemma msub_var : forall vs v k n,
+        Forall (closed k) vs ->
+        nth_error vs n = Some v ->
+        msub k vs !n = v.
+    Proof.
+      intro vs; induction vs as [| v vs IHvs];
+        intros e k n Hvs Hnth; inv Hvs; simpl.
+      - rewrite nth_error_nil in Hnth; discriminate.
+      - destruct n as [| n]; simpl in *; destroy_arith.
+        + inv Hnth. rewrite e0.
+          rewrite shift0. apply msub_closed; auto.
+        + inv Hnth. rewrite IHvs with (v := e); auto.
+          admit.
+        + rewrite e0. Search shift. admit.
+        + rewrite IHvs with (v := e); auto.
+    Abort.
+  End MSub.
+  
   Definition neutral (e : expr) : Prop :=
     match e with
     | !_ | _ ⋅ _ => True
@@ -889,6 +1083,14 @@ Module JapaneseNorm.
       - apply step_nstuck in H3. contradiction.
     Qed.
 
+    Local Hint Resolve stuck_SN : core.
+
+    Lemma SN_var : forall n, SN !n.
+    Proof. intuition. Qed.
+
+    Lemma SN_lambda : forall t e, SN (λ t ⇒ e).
+    Proof. intuition. Qed.
+
     Local Hint Resolve nstep_stuck : core.
     
     Lemma SN_exists_stuck : forall e,
@@ -979,5 +1181,76 @@ Module JapaneseNorm.
       apply SN_exists_stuck in Hsn as [v [Hvstk Hvms]].
       apply multi_unstep_R with (e' := beta_reduce e v); eauto.
     Qed.
+
+    Local Hint Resolve SN_lambda : core.
+    Local Hint Resolve SN_var : core.
+    Local Hint Resolve typ_msub_weak : core.
+
+    Lemma msub_var_R : forall G g ts vs t n,
+        Forall2 (R g) vs ts ->
+        nth_error (G ++ rev ts ++ g) n = Some t ->
+        R (G ++ g) (msub (length G) vs !n) t.
+    Proof.
+      intro G; induction G as [| T G IHG];
+        intro g; induction g as [| tg g];
+          intro ts; induction ts as [| t ts];
+            intros [| v vs] τ [| n] HF2 Hnth; inv HF2;
+              simpl in *; try discriminate;
+                destroy_arith; simpl in *.
+      - assert (vs = []).
+        { rewrite <- length_zero_iff_nil; assumption. }
+        subst; inv H4; simpl in *. inv Hnth.
+        rewrite shift0. assumption.
+      - apply IHts; auto; simpl.
+        rewrite <- app_assoc in Hnth.
+        destruct (rev ts) eqn:Hrevtseq; simpl in *; auto.
+        apply rev_nil in Hrevtseq; subst.
+        inv H4; simpl in *; lia.
+      - apply IHts; auto.
+        rewrite <- app_assoc in Hnth.
+        destruct (rev ts) eqn:Hrevtseq; simpl in *; auto.
+        admit.
+    Admitted.
+
+    Local Hint Resolve Forall2_impl : core.
+    
+    Lemma R_msub : forall G ts g e t vs,
+        Forall2 (R g) vs ts ->
+        (G ++ rev ts ++ g) ⊢ e ∈ t ->
+        R (G ++ g) (msub (length G) vs e) t.
+    Proof.
+      intros G ts g e t vs ? Het.
+      generalize dependent vs.
+      remember (G ++ rev ts ++ g) as ctx eqn:Hctxeq.
+      generalize dependent g;
+        generalize dependent ts;
+        generalize dependent G.
+      induction Het; intros G ts g Heqctx vs HF2; subst.
+      - eapply msub_var_R; eauto.
+      - rewrite msub_lambda.
+        replace (S (length G))
+          with (length (τ :: G)) by reflexivity.
+        apply abs_R.
+        + constructor.
+          rewrite app_comm_cons. eauto.
+        + intros v HRvt. admit.
+      - rewrite msub_app.
+        assert (Hdumb : G ++ rev ts ++ g = G ++ rev ts ++ g)
+          by trivial.
+        pose proof IHHet1 _ _ _ Hdumb _ HF2
+          as [HSN [Hchk HR]]; clear IHHet1.
+        pose proof IHHet2 _ _ _ Hdumb _ HF2 as IH2; clear IHHet2.
+        eauto.
+    Admitted.
+
+    Lemma reduce_lemma : forall e t g ts vs,
+        Forall2 (R g) vs ts ->
+        (ts ++ g) ⊢ e ∈ t ->
+        R g (fold_left beta_reduce vs e) t.
+    Proof.
+      intro e;
+        induction e as [n | t e IHe | e1 IHe1 e2 IHe2];
+        intros τ g ts vs HF2 Het; inv Het; simpl.
+    Abort.
   End RProp.
 End JapaneseNorm.
