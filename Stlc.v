@@ -613,6 +613,14 @@ Section FrenchLemmas.
     - constructor.
       apply IHe with (S m); auto 1; lia.
   Qed.
+
+  Lemma shift_closed : forall k e,
+      closed k e -> forall c i, closed (k + i) (shift c i e).
+  Proof.
+    intros k e Hc; induction Hc;
+      intros c i; simpl; eauto.
+    constructor. destroy_arith.
+  Qed.
 End FrenchLemmas.
 
 Section StepEXM.
@@ -660,18 +668,43 @@ Section StepEXM.
 End StepEXM.
 
 Section Forall2Context.
-  Context {A B : Type}.
-  Variable R : list A -> B -> A -> Prop.
-  Variable ctx : list A.
+  Context {U V : Type}.
 
-  Inductive AllCtx2 : list B -> list A -> Prop :=
-  | AllCtx2_nil :
-      AllCtx2 [] []
-  | AllCtx2_cons a la b lb :
-      R (la ++ ctx) b a ->
-      AllCtx2 lb la ->
-      AllCtx2 (b :: lb) (a :: la).
-  (**[]*)
+  Section Defs.
+    Variable R : list U -> V -> U -> Prop.
+    Variable ctx : list U.
+
+    Inductive AllCtx2 : list V -> list U -> Prop :=
+    | AllCtx2_nil :
+        AllCtx2 [] []
+    | AllCtx2_cons u us v vs :
+        R (us ++ ctx) v u ->
+        AllCtx2 vs us ->
+        AllCtx2 (v :: vs) (u :: us).
+    (**[]*)
+
+    Lemma AllCtx2_length : forall vs us,
+        AllCtx2 vs us -> length vs = length us.
+    Proof.
+      intros vs us H; induction H; simpl; auto.
+    Qed.
+  End Defs.
+
+  Local Hint Constructors AllCtx2 : core.
+
+  Lemma AllCtx2_sanity : forall (R : V -> U -> Prop) ctx vs us,
+      AllCtx2 (fun _ => R) ctx vs us <-> Forall2 R vs us.
+  Proof.
+    intros ? ? ? ?; split; intros H;
+      induction H; auto.
+  Qed.
+
+  Lemma AllCtx2_impl : forall (R W : list U -> V -> U -> Prop) ctx vs us,
+      (forall ctx v u, R ctx v u -> W ctx v u) ->
+      AllCtx2 R ctx vs us -> AllCtx2 W ctx vs us.
+  Proof.
+    intros R W ctx vs us HRW HR; induction HR; auto.
+  Qed.
 End Forall2Context.
 
 Lemma Forall2_length : forall A B (R : A -> B -> Prop) a b,
@@ -696,17 +729,56 @@ Proof.
   rewrite rev_unit in H. discriminate.
 Qed.
 
-Module JapaneseNorm.  
-  Section MultiSub.
-    Lemma sub_closed : forall k e,
-      closed k e -> forall n v, sub (k + n) v e = e.
+Module JapaneseNorm.
+  Lemma sub_closed : forall k e,
+    closed k e -> forall n v, sub (k + n) v e = e.
+  Proof.
+    intros k e HC; induction HC;
+      intros; simpl; destroy_arith;
+        f_equal; eauto.
+  Qed.
+
+  Inductive all_closed (k : nat) : list expr -> Prop :=
+  | all_closed_nil :
+      all_closed k []
+  | all_closed_cons v vs :
+      closed (length vs + k) v ->
+      all_closed k vs ->
+      all_closed k (v :: vs).
+  (**[]*)
+    
+  Section FoldSub.
+    Lemma sub_fold_sub : forall k e v vs,
+      sub k v (fold_left (fun e v => sub k v e) vs e) =
+      fold_left (fun e v => sub k v e) (vs ++ [v]) e.
     Proof.
-      intros k e HC; induction HC;
-        intros; simpl; destroy_arith;
-          f_equal; eauto.
+      intros k e v vs.
+      rewrite fold_left_app; simpl.
+      reflexivity.
     Qed.
 
-    Lemma multi_sub_closed_l : forall vs e k n,
+    Lemma distr_fold_sub : forall vs M N n p,
+        fold_left (fun e v => sub (p + n) v e) vs (sub p N M) =
+        sub p (fold_left (fun e v => sub n v e) vs N)
+            (fold_left (fun e v => sub (S (p + n)) v e) vs M).
+    Proof.
+      intro vs; induction vs as [| v vs IHvs];
+        intros M N n p; simpl; trivial.
+      rewrite <- IHvs. rewrite distr_sub. reflexivity.
+    Qed.
+
+    Lemma distr_fold_br : forall vs M N n,
+        fold_left (fun e v => sub n v e) vs (beta_reduce M N) =
+        beta_reduce
+          (fold_left (fun e v => sub (S n) v e) vs M)
+          (fold_left (fun e v => sub n v e) vs N).
+    Proof.
+      intros vs M N n; unfold beta_reduce.
+      replace n with (0 + n) by reflexivity.
+      rewrite distr_fold_sub. reflexivity.
+    Qed.
+    
+    Lemma fold_sub_closed_l : forall vs e k n,
         closed k e ->
         fold_left (fun e v => sub (k + n) v e) vs e = e.
     Proof.
@@ -718,7 +790,7 @@ Module JapaneseNorm.
 
     Local Hint Resolve sub_closed : core.
 
-    Lemma multi_sub_closed_r : forall vs e k n,
+    Lemma fold_sub_closed_r : forall vs e k n,
         closed k e ->
         fold_right (sub (k + n)) e vs = e.
     Proof.
@@ -727,45 +799,52 @@ Module JapaneseNorm.
       rewrite IHvs by assumption; auto.
     Qed.
 
-    Lemma multi_typ_sub_weak_r : forall vs ts g,
-        Forall2 (check g) vs ts ->
-        forall G e t,
-          (G ++ ts ++ g) ⊢ e ∈ t ->
-          (G ++ g) ⊢ fold_right (sub (length G)) e vs ∈ t.
-    Proof.
-      intro vs;
-        induction vs as [| v vs IHvs];
-        intros [| t ts] g HF2 G e τ Het;
-        inv HF2; simpl in *; trivial.
-      eapply typ_sub_weak; eauto.
-    Abort.
-
-    Lemma multi_typ_sub_weak_l : forall vs ts g,
-        Forall2 (check g) vs ts ->
+    Local Hint Resolve typ_sub_weak : core.
+    
+    Lemma fold_typ_sub_weak_l : forall vs ts g,
+        AllCtx2 check g vs ts ->
         forall G e t,
           (G ++ ts ++ g) ⊢ e ∈ t ->
           (G ++ g) ⊢ fold_left (fun e v => sub (length G) v e) vs e ∈ t.
     Proof.
-      intro vs;
-        induction vs as [| v vs IHvs];
-        intros ts g Hvs; inv Hvs;
-          intros G e τ Het; simpl; trivial.
-      eapply IHvs; eauto.
-      eapply typ_sub_weak; eauto.
-    Abort.        
-  End MultiSub.
+      intros vs ts g Hctx;
+        induction Hctx; intros G e t Het;
+          simpl in *; eauto.
+    Qed.
+
+    Lemma fold_typ_sub_weak_r : forall vs ts g,
+        AllCtx2 check g vs ts ->
+        forall G e t,
+          (G ++ rev ts ++ g) ⊢ e ∈ t ->
+          (G ++ g) ⊢ fold_right (sub (length G)) e vs ∈ t.
+    Proof.
+      intros vs ts g Hctx;
+        induction Hctx; intros G e t Het;
+          simpl in *; trivial.
+      apply typ_sub_weak with u.
+    Abort.
+
+    Lemma fold_sub_lambda_l : forall vs e t n,
+        fold_left (fun e v => sub n v e) vs (λ t ⇒ e) =
+        λ t ⇒ (fold_left (fun e v => sub (S n) v e) vs e).
+    Proof.
+      intro vs; induction vs as [| v vs IHvs];
+        intros e t n; simpl; trivial.
+    Qed.
+
+    Lemma fold_sub_app_l : forall vs e1 e2 n,
+        fold_left (fun e v => sub n v e) vs (e1 ⋅ e2) =
+        (fold_left (fun e v => sub n v e) vs e1) ⋅ (fold_left (fun e v => sub n v e) vs e2).
+    Proof.
+      intro vs; induction vs as [| v vs IHvs];
+        intros e t n; simpl; trivial.
+    Qed.        
+  End FoldSub.
 
   Fixpoint msub (n : nat) (vs : list expr) (e : expr) : expr :=
     match vs with
     | [] => e
     | v :: vs => msub n vs (sub (n + length vs) v e)
-    end.
-  (**[]*)
-
-  Fixpoint msub_r (n : nat) (vs : list expr) (e : expr) : expr :=
-    match vs with
-    | [] => e
-    | v :: vs => sub (n + length vs) v (msub_r n vs e)
     end.
   (**[]*)
 
@@ -779,6 +858,8 @@ Module JapaneseNorm.
         intros e k Hek; simpl; trivial.
       rewrite sub_closed by assumption; auto.
     Qed.
+
+    Local Hint Resolve sub_closed : core.
 
     Lemma typ_msub_weak : forall vs ts g,
         Forall2 (check g) vs ts ->
@@ -798,7 +879,7 @@ Module JapaneseNorm.
       rewrite <- app_assoc in Het; simpl in Het.
       rewrite app_assoc in Het. assumption.
     Qed.
-
+    
     Lemma msub_lambda : forall vs e t n,
         msub n vs (λ t ⇒ e) = λ t ⇒ (msub (S n) vs e).
     Proof.
@@ -1028,31 +1109,49 @@ Module JapaneseNorm.
     Local Hint Resolve SN_lambda : core.
     Local Hint Resolve SN_var : core.
     Local Hint Resolve typ_msub_weak : core.
+    Local Hint Resolve fold_typ_sub_weak_l : core.
+    Local Hint Resolve AllCtx2_impl : core.
 
-    Lemma msub_var_R : forall G g ts vs t n,
-        Forall2 (R g) vs ts ->
-        nth_error (G ++ rev ts ++ g) n = Some t ->
-        R (G ++ g) (msub (length G) vs !n) t.
+    Lemma R_fold_sub : forall G ts g e t vs,
+        AllCtx2 R g vs ts ->
+        (G ++ ts ++ g) ⊢ e ∈ t ->
+        R (G ++ g) (fold_left (fun e v => sub (length G) v e) vs e) t.
     Proof.
-      intro G; induction G as [| T G IHG];
-        intro g; induction g as [| tg g];
-          intro ts; induction ts as [| t ts];
-            intros [| v vs] τ [| n] HF2 Hnth; inv HF2;
-              simpl in *; try discriminate;
-                destroy_arith; simpl in *.
-      - assert (vs = []).
-        { rewrite <- length_zero_iff_nil; assumption. }
-        subst; inv H4; simpl in *. inv Hnth.
-        rewrite shift0. assumption.
-      - apply IHts; auto; simpl.
-        rewrite <- app_assoc in Hnth.
-        destruct (rev ts) eqn:Hrevtseq; simpl in *; auto.
-        apply rev_nil in Hrevtseq; subst.
-        inv H4; simpl in *; lia.
-      - apply IHts; auto.
-        rewrite <- app_assoc in Hnth.
-        destruct (rev ts) eqn:Hrevtseq; simpl in *; auto.
-        admit.
+      intros G ts g e t vs ? Het.
+      generalize dependent vs.
+      remember (G ++ ts ++ g) as Γ eqn:HeqG.
+      generalize dependent g;
+        generalize dependent ts;
+        generalize dependent G.
+      induction Het;
+        intros G ts g Heqg vs Hac; subst.
+      - admit.
+      - simpl; intuition.
+        + rewrite fold_sub_lambda_l. eauto.
+        + rewrite fold_sub_lambda_l.
+          constructor.
+          replace (S (length G))
+            with (length (τ :: G)) by reflexivity.
+          rewrite app_comm_cons. eauto.
+        + assert (Hsn : SN e2) by eauto.
+          apply SN_exists_stuck in Hsn as [v [Hv He2]].
+          apply multi_unstep_R
+            with (e' :=
+                    beta_reduce
+                      (fold_left
+                         (fun e v => sub (S (length G)) v e) vs e) v).
+          * rewrite fold_sub_lambda_l; eauto.
+          * constructor 3 with τ; eauto.
+          * assert (doi: τ :: G ++ ts ++ g = τ :: G ++ ts ++ g) by trivial.
+            pose proof IHHet (τ :: G) ts g doi vs Hac as IH; clear IHHet.
+            simpl in *.
+            Check substitution_lemma.
+            (** Maybe "substitution_lemma" for R? *) admit.
+      - rewrite fold_sub_app_l.
+        assert (doi: G ++ ts ++ g = G ++ ts ++ g) by trivial.
+        pose proof IHHet1 G ts g doi vs Hac.
+        pose proof IHHet2 G ts g doi vs Hac.
+        simpl in *; intuition.
     Admitted.
 
     Local Hint Resolve Forall2_impl : core.
@@ -1069,7 +1168,7 @@ Module JapaneseNorm.
         generalize dependent ts;
         generalize dependent G.
       induction Het; intros G ts g Heqctx vs HF2; subst.
-      - eapply msub_var_R; eauto.
+      - admit.
       - rewrite msub_lambda.
         replace (S (length G))
           with (length (τ :: G)) by reflexivity.
