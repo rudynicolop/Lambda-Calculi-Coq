@@ -1097,7 +1097,7 @@ Module JapaneseNorm.
 
     Lemma abs_R : forall g e t t',
         g ⊢ λ t ⇒ e ∈ t → t' ->
-        (forall v, R g v t -> R g (beta_reduce e v) t') ->
+        (forall v, stuck v -> R g v t -> R g (beta_reduce e v) t') ->
         R g (λ t ⇒ e) (t → t').
     Proof.
       intros g e t t' Het HR; simpl; intuition.
@@ -1112,19 +1112,55 @@ Module JapaneseNorm.
     Local Hint Resolve fold_typ_sub_weak_l : core.
     Local Hint Resolve AllCtx2_impl : core.
 
+    (*Definition br_first*)
+
+    Lemma R_fold_br : forall g ts e t vs,
+        AllCtx2 R g vs ts ->
+        (ts ++ g) ⊢ e ∈ t ->
+        R g (fold_left beta_reduce vs e) t.
+    Proof.
+      intros g ts e t vs ? Het.
+      remember (ts ++ g) as Γ eqn:Heqg.
+      generalize dependent g; generalize dependent ts; generalize dependent vs.
+      induction Het; intros vs ts g Hctx Heqg; subst.
+      - generalize dependent n;
+          generalize dependent τ.
+        induction Hctx; intros t n Hnth; simpl in *.
+        + generalize dependent n;
+            generalize dependent t.
+          induction g as [| tg g IHg];
+            intros t n Hnth; simpl.
+          * rewrite nth_error_nil in Hnth.
+            discriminate.
+          * destruct n as [| n]; simpl in *.
+            ** inv Hnth. generalize dependent g.
+               induction t as [| t1 IHt1 t2 IHt2];
+                 intros g IH; simpl; intuition. admit.
+            ** admit.
+        + admit.
+      - unfold beta_reduce.
+        rewrite fold_sub_lambda_l. apply abs_R.
+        + constructor.
+          replace (τ :: g) with ([τ] ++ g) by reflexivity.
+          replace 1 with (length [τ]) by reflexivity. eauto.
+        + intros v Hstk HR. admit.
+      - assert (doi: ts ++ g = ts ++ g) by reflexivity.
+        pose proof IHHet1 _ _ _ Hctx doi as IH1.
+        pose proof IHHet2 _ _ _ Hctx doi as IH2.
+        unfold beta_reduce in *.
+        rewrite fold_sub_app_l. simpl in IH1.
+        intuition.
+    Admitted.
+
     Lemma R_fold_sub : forall G ts g e t vs,
         AllCtx2 R g vs ts ->
         (G ++ ts ++ g) ⊢ e ∈ t ->
         R (G ++ g) (fold_left (fun e v => sub (length G) v e) vs e) t.
     Proof.
-      intros G ts g e t vs ? Het.
-      generalize dependent vs.
+      intros G ts g e t vs ? Het. generalize dependent vs.
       remember (G ++ ts ++ g) as Γ eqn:HeqG.
-      generalize dependent g;
-        generalize dependent ts;
-        generalize dependent G.
-      induction Het;
-        intros G ts g Heqg vs Hac; subst.
+      generalize dependent g; generalize dependent ts; generalize dependent G.
+      induction Het; intros G ts g Heqg vs Hac; subst.
       - admit.
       - simpl; intuition.
         + rewrite fold_sub_lambda_l. eauto.
