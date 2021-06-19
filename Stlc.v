@@ -1,6 +1,13 @@
 Require Import Lambda.Util Coq.Program.Equality.
 Require Import FunctionalExtensionality.
 
+(** Note: many of the helper lemmas
+          and proof techniques
+          are inspired by those of
+          Kazuhiko Sakaguchi:
+          [https://github.com/pi8027/lambda-calculus]
+*)        
+
 Section NthError.
   Context {A : Type}.
   
@@ -104,22 +111,18 @@ Notation "e1 ⋅ e2"
 Notation "! n" := (Var n) (at level 0) : expr_scope.
 Open Scope expr_scope.
 
-Example id : expr := λ ⊥ ⇒ !0.
-Example f2' : expr := λ ⊥ → ⊥ ⇒ λ ⊥ ⇒ !1 ⋅ !0.
-Example t1 : type := (⊥ → ⊥) → ⊥ → ⊥.
-
 (** * Static Semantics *)
 
 Reserved Notation "Γ '⊢' e '∈' τ" (at level 40).
 
 Inductive typing (Γ : list type) : expr -> type -> Prop :=
-| chk_var n τ :
+| typ_var n τ :
     nth_error Γ n = Some τ ->
     Γ ⊢ !n ∈ τ
-| chk_lam τ τ' e :
+| typ_lam τ τ' e :
     (τ :: Γ) ⊢ e ∈ τ' ->
     Γ ⊢ λ τ ⇒ e ∈ τ → τ'
-| chk_app τ τ' e1 e2 :
+| typ_app τ τ' e1 e2 :
     Γ ⊢ e1 ∈ τ → τ' ->
     Γ ⊢ e2 ∈ τ ->
     Γ ⊢ e1 ⋅ e2 ∈ τ'
@@ -424,3 +427,662 @@ Inductive bred : expr -> expr -> Prop :=
     er -->  er' ->
     el ⋅ er -->  el ⋅ er'
 where "e1 '-->' e2" := (bred e1 e2).
+
+Section Bred_exm.
+  Local Hint Constructors bred : core.
+
+  Lemma bred_exm : forall e,
+      (exists e', e -->  e') \/ forall e', ~ e -->  e'.
+  Proof.
+    intro e;
+      induction e as
+        [n
+        | t e [[e' IHe]| IHe]
+        | e1 [[e1' IHe1] | IHe1] e2 [[e2' IHe2] | IHe2]]; eauto;
+        try (right; intros e' He'; inv He';
+             intuition; eauto; contradiction).
+    destruct e1 as [m | t1 e1 | e11 e12]; eauto;
+      try (right; intros e' He'; inv He';
+           intuition; eauto; contradiction).
+  Qed.
+End Bred_exm.
+
+Section BredSub.
+  Local Hint Constructors bred : core.
+  Local Hint Unfold beta_reduce : core.
+
+  Lemma sub_bred : forall e e',
+      e -->  e' -> forall n es, sub n es e -->  sub n es e'.
+  Proof.
+    intros e e' Hred; induction Hred;
+      intros n es; simpl; auto.
+    unfold beta_reduce.
+    rewrite sub_sub_distr by lia; simpl.
+    replace (n - 0) with n by lia.
+    replace (sub 0 [sub n es e2] (sub (S n) es e1))
+      with (beta_reduce (sub (S n) es e1) (sub n es e2))
+      by reflexivity; auto.
+  Qed.
+
+  Local Hint Resolve sub_bred : core.
+
+  Lemma beta_reduce_bred : forall e1 e1' e2,
+      e1 -->  e1' -> beta_reduce e1 e2 -->  beta_reduce e1' e2.
+  Proof. autounfold with core; auto. Qed.
+End BredSub.
+
+Section Preservation.
+  Local Hint Constructors typing : core.
+  Local Hint Resolve typing_beta_reduce : core.
+
+  Theorem preservation : forall e e',
+      e -->  e' -> forall g t, g ⊢ e ∈ t -> g ⊢ e' ∈ t.
+  Proof.
+    intros e e' He; induction He;
+      intros g T Ht; inv Ht; eauto.
+    inv H1; eauto.
+  Qed.
+End Preservation.
+
+Notation "e '-->*' e'"
+  := (refl_trans_closure bred e e')
+       (at level 40, no associativity).
+
+(** Termination predicate. *)
+Definition halts (e : expr) : Prop :=
+  exists e', e -->* e' /\ forall e'', ~ e' -->  e''.
+
+Section AccLemmas.
+  Local Hint Constructors Acc : core.
+  
+  Lemma acc_pres : forall A B (f : A -> B) (R : A -> A -> Prop) (Q : B -> B -> Prop),
+    (forall a1 a2, R a1 a2 -> Q (f a1) (f a2)) ->
+    forall a, Acc Q (f a) -> Acc R a.
+  Proof.
+    intros A B f R Q Hmap a HQ.
+    remember (f a) as fa eqn:Heqfa.
+    generalize dependent a.
+    induction HQ; intros a Heqfa; subst; eauto.
+  Qed.
+
+  Lemma Acc_ind2 :
+    forall A B (RA : A -> A -> Prop) (RB : B -> B -> Prop) (P : A -> B -> Prop),
+      (forall a b, (forall a', RA a' a -> P a' b) ->
+              (forall b', RB b' b -> P a b') -> P a b) ->
+      forall a b, Acc RA a -> Acc RB b -> P a b.
+  Proof.
+    intros A B R Q P H a b HA.
+    generalize dependent b.
+    induction HA; intros b HB;
+      induction HB; eauto.
+  Qed.
+End AccLemmas.
+
+(** Strongly Normalizing. *)
+Definition SN : expr -> Prop := Acc (fun e' e => e -->  e').
+
+Section HaltsSN.
+  Local Hint Constructors refl_trans_closure : core.
+  
+  Lemma SN_halts : forall e, SN e -> halts e.
+  Proof.
+    intros e Hsn; unfold halts; induction Hsn.
+    destruct (bred_exm x) as [[e He] | He]; eauto.
+    apply H0 in He as He_. destruct He_ as [e' [He' He'']]; eauto.
+  Qed.
+
+  Local Hint Constructors Acc : core.
+  Local Hint Unfold SN : core.
+
+  Lemma halts_SN : forall e, halts e -> SN e.
+  Proof.
+    unfold halts; intros e [e' [He He']].
+    induction He.
+    - constructor. intros e' He.
+      apply He' in He. contradiction.
+    - intuition. constructor.
+      intros e'' He''.
+      assert (Ha4: exists a4, a2 -->* a4 /\ e'' -->* a4) by admit.
+      destruct Ha4 as [a4 [Ha2a4 He''a4]].
+  Abort.
+End HaltsSN.
+
+Section SNProp.
+  Local Hint Unfold SN : core.
+
+  Lemma SN_var : forall n, SN !n.
+  Proof.
+    intros n. constructor.
+    intros e' Hred. inv Hred.
+  Qed.
+  
+  Lemma bred_SN : forall e e',
+    e -->  e' -> SN e -> SN e'.
+  Proof.
+    intros e e' Hbred Hsn; inv Hsn; auto.
+  Qed.
+
+  Local Hint Resolve bred_SN : core.
+
+  Lemma multi_bred_SN : forall e e',
+      e -->* e' -> SN e -> SN e'.
+  Proof.
+    intros e e' Hms; induction Hms; eauto.
+  Qed.
+
+  Local Hint Constructors Acc : core.
+  Local Hint Resolve multi_bred_SN : core.
+
+  Lemma un_bred_SN : forall e e',
+      e -->  e' -> SN e' -> SN e.
+  Proof.
+    intros e e' Hbred Hsn.
+    (* TODO: make bred deterministic. *)
+  Admitted.
+
+  Local Hint Resolve un_bred_SN : core.
+  
+  Lemma multi_un_bred_SN : forall e e',
+      e -->* e' -> SN e' -> SN e.
+  Proof.
+    intros e e' Hms; induction Hms; eauto.
+  Qed.
+
+  Lemma not_bred_SN : forall e,
+      (forall e', ~ e -->  e') -> SN e.
+  Proof.
+    intros e H; constructor.
+    intros e' H'. apply H in H'. contradiction.
+  Qed.
+End SNProp.
+
+Module RudyNorm.
+  (** The Logical Relation. *)
+  Fail Inductive R (g : list type) (e : expr) : type -> Prop :=
+  | R_base :
+      g ⊢ e ∈ ⊥ -> SN e -> R g e ⊥
+  | R_arrow T t :
+      g ⊢ e ∈ T → t -> SN e ->
+      (forall E, R g E T -> R g (e ⋅ E) t) ->
+      R e g (T → t).
+  (**[]*)
+  
+  (** jk, The Logical Relation for real this time. *)
+  Fixpoint R (g : list type) (e : expr) (t : type) : Prop :=
+    SN e /\ g ⊢ e ∈ t /\
+    match t with
+    | ⊥ => True
+    | T → t => forall E, R g E T -> R g (e ⋅ E) t
+    end.
+  (**[]*)
+  
+  Definition neutral (e : expr) : Prop :=
+    match e with
+    | ! _ | _ ⋅ _ => True
+    | λ _ ⇒ _ => False
+    end.
+  (**[]*)
+  
+  Section RProp.
+    Local Hint Resolve preservation : core.
+    Local Hint Constructors bred : core.
+    Local Hint Unfold SN : core.
+    Local Hint Resolve bred_SN : core.
+    Local Hint Unfold R : core.
+    
+    Lemma bred_R : forall t g e e',
+        e -->  e' -> R g e t -> R g e' t.
+    Proof.
+      intro t; induction t as [| t1 IHt1 t2 IHt2];
+        intros g e e' Hbred HR; simpl in *;
+          intuition; eauto.
+    Qed.
+    
+    Local Hint Resolve bred_R : core.
+    
+    Lemma R_typing : forall g e t, R g e t -> g ⊢ e ∈ t.
+    Proof.
+      intros ? ? []; simpl; intuition.
+    Qed.
+    
+    Local Hint Resolve R_typing : core.
+    
+    Lemma R_SN : forall g e t, R g e t -> SN e.
+    Proof.
+      intros g e []; simpl; intuition.
+    Qed.
+    
+    Local Hint Resolve R_SN : core.
+    Local Hint Resolve un_bred_SN : core.
+    Local Hint Constructors typing : core.
+    
+    Lemma un_bred_R : forall t g e e',
+        e -->  e' -> g ⊢ e ∈ t -> R g e' t -> R g e t.
+    Proof.
+      intro t;
+        induction t as [| t1 IHt1 t2 IHt2];
+        intros g e e' Hbred Het HR; simpl in *;
+          intuition; eauto 6.
+    Qed.
+    
+    Local Hint Resolve un_bred_R : core.
+    
+    Lemma br_R : forall g e T t,
+        SN (λ T ⇒ e) -> g ⊢ λ T ⇒ e ∈ T → t ->
+        (forall E, R g E T -> R g (beta_reduce e E) t) ->
+        R g (λ T ⇒ e) (T → t).
+    Proof.
+      intros g e T t Hsn Het HR.
+      simpl. intuition. eauto.
+    Qed.
+    
+    Local Hint Resolve br_R : core.
+    Local Hint Resolve Forall2_length : core.
+    Local Hint Resolve typing_shift : core.
+    Local Hint Resolve SN_var : core.
+    Local Hint Resolve not_bred_SN : core.
+    
+    Lemma R_neutral : forall t g e,
+        neutral e ->
+        g ⊢ e ∈ t ->
+        (forall e', e -->  e' -> R g e' t) ->
+        R g e t.
+    Proof.
+      intro t; induction t as [| t1 IHt1 t2 IHt2];
+        intros g [n | T e | e1 e2] Hn Het HR;
+        simpl in *; intuition.
+      - destruct (bred_exm (e1 ⋅ e2)) as [[e' He'] | He']; eauto.
+      - clear HR. apply IHt2; eauto.
+        intros e' He'. inv He'. inv H3. admit.
+      - destruct (bred_exm (e1 ⋅ e2)) as [[e' He'] | He']; eauto.
+      - apply IHt2; eauto.
+        intros e' He'. inv He'.
+        + apply HR in H3. intuition.
+        + admit.
+    Abort.
+    
+    Lemma R_var : forall t g n,
+        nth_error g n = Some t ->
+        (forall e', !n -->  e' -> R g e' t) ->
+        R g !n t.
+    Proof.
+      induction t as [| t1 IHt1 t2 IHt2]; intros;
+        simpl in *; intuition.
+    Abort.
+      
+    Lemma R_shift : forall t e G g g',
+        R (G ++ g) e t ->
+        R (G ++ g' ++ g) (shift (length G) (length g') e) t.
+    Proof.
+      induction t as [| t1 IHt1 t2 IHt2];
+        intros e G g g' HR; simpl in *; intuition; eauto.
+      - admit.
+      - admit.
+      - assert (HE': exists E', shift (length G) (length g') E' = E) by admit.
+        destruct HE' as [E' HE']. rewrite <- HE'.
+        assert (Happ:
+                  (shift (length G) (length g') e)
+                    ⋅ (shift (length G) (length g') E') =
+                  shift (length G) (length g') (e ⋅ E')) by reflexivity.
+        rewrite Happ. apply IHt2. apply H2.
+        assert (HE'': exists E'', shift (length G) (length g) E'' = E') by admit.
+        destruct HE'' as [E'' HE'']. rewrite <- HE''.
+        replace (G ++ g) with (G ++ g ++ []).
+        apply IHt1.
+    Abort.
+    
+    Lemma R_var : forall t g n,
+        nth_error g n = Some t -> R g !n t.
+    Proof.
+      intro t; induction t as [| t1 IHt1 t2 IHt2];
+        intros g n Hnth; simpl.
+      - intuition.
+      - split; eauto. split; eauto.
+        intros E HR.
+    Abort.
+    
+    Local Hint Resolve typing_sub : core.
+    Local Hint Resolve Forall2_impl : core.
+    
+    Lemma reduce_lemma : forall e ts g es t,
+        Forall2 (R g) es ts ->
+        (ts ++ g) ⊢ e ∈ t ->
+        R g (sub 0 es e) t.
+    Proof.
+      intro e;
+        induction e as [n | T e IHe | e1 IHe1 e2 IHe2];
+        intros ts g es t HF2 Het; inv Het.
+      - simpl; rewrite shift0.
+        replace (n - 0) with n by lia.
+        assert (length es = length ts) by eauto.
+        destruct (le_lt_dec (length es) n) as [Hesn | Hesn].
+        + rewrite nth_overflow by lia.
+          rewrite nth_error_app2 in H0 by lia.
+          admit.
+        + rewrite nth_error_app1 in H0 by lia.
+          apply length_nth_error in Hesn as [e He].
+          erewrite nth_error_nth; eauto.
+          eapply Forall2_nth_error; eauto.
+      - unfold sub; fold sub.
+        apply br_R.
+        + admit.
+        + constructor.
+          replace 1 with (length [T]) by reflexivity.
+          replace (T :: g) with ([T] ++ g) by reflexivity.
+          eauto.
+        + intros E HR. unfold beta_reduce.
+          replace 1 with (length [E] + 0) by reflexivity.
+          rewrite <- sub_append; simpl.
+          eapply IHe; eauto.
+      - simpl.
+        pose proof IHe1 _ _ _ _ HF2 H1 as IH1.
+        pose proof IHe2 _ _ _ _ HF2 H3 as IH2.
+        simpl in *. intuition.
+    Abort.
+    
+    Lemma R_lemma : forall e G ts g es t,
+        Forall2 (R g) es ts ->
+        (G ++ ts ++ g) ⊢ e ∈ t ->
+        R (G ++ g) (sub (length G) es e) t.
+    Proof.
+      intro e;
+        induction e as [n | T e IHe | e1 IHe1 e2 IHe2];
+        intros G ts g es t HF2 Het; inv Het; simpl.
+      - assert (length es = length ts) by eauto.
+        destroy_arith.
+        + rewrite nth_error_app2 in H0 by lia.
+          destruct (le_lt_dec (length es) (n - length G))
+            as [Hesng | Hesng].
+          * rewrite nth_overflow by lia.
+            rewrite nth_error_app2 in H0 by lia. simpl.
+            admit.
+          * rewrite nth_error_app1 in H0 by lia.
+            apply length_nth_error in Hesng as [e He].
+            erewrite nth_error_nth; eauto.
+            pose proof Forall2_nth_error _ _ _ _ _ HF2 _ _ _ He H0.
+            assert (exists e, nth_error es (n - length G) = Some e).
+    Abort.
+  End RProp.
+End RudyNorm.
+
+Module JNorm.  
+  Fixpoint teqb (t1 t2 : type) : bool :=
+    match t1, t2 with
+    | ⊥, ⊥ => true
+    | T1 → t1, T2 → t2 => teqb T1 T2 && teqb t1 t2
+    | _, _ => false
+    end.
+  (**[]*)
+
+  Section TypeEq.
+    Local Hint Resolve andb_true_intro : core.
+    
+    Lemma teqb_refl : forall t, teqb t t = true.
+    Proof.
+      intro t; induction t; simpl; intuition.
+    Qed.
+
+    Hint Rewrite Bool.andb_true_iff : core.
+
+    Lemma eq_teqb : forall t1 t2, teqb t1 t2 = true -> t1 = t2.
+    Proof.
+      intro t1; induction t1; intros []; simpl;
+        autorewrite with core; intuition;
+          f_equal; eauto.
+    Qed.
+
+    Local Hint Resolve eq_teqb : core.
+    Local Hint Resolve teqb_refl : core.
+    Hint Rewrite teqb_refl : core.
+
+    Lemma teqb_eq : forall t1 t2, teqb t1 t2 = true <-> t1 = t2.
+    Proof.
+      intuition; subst; trivial.
+    Qed.
+
+    Local Hint Resolve teqb_eq : core.
+    Hint Rewrite teqb_eq : core.
+    Hint Constructors Bool.reflect : core.
+
+    Lemma teqb_reflect : forall t1 t2,
+        Bool.reflect (t1 = t2) (teqb t1 t2).
+    Proof.
+      intros t1 t2.
+      destruct (teqb t1 t2) eqn:Hteqb; auto.
+      constructor. intros H.
+      apply teqb_eq in H.
+      rewrite H in Hteqb. discriminate.
+    Qed.
+  End TypeEq.
+
+  Fixpoint types (g : list type) (e : expr) : option type :=
+    match e with
+    | !n => nth_error g n
+    | λ t ⇒ e =>
+      match types (t :: g) e with
+      | None => None
+      | Some T => Some (t → T)
+      end
+    | e1 ⋅ e2 =>
+      match types g e1, types g e2 with
+      | Some (T → t), Some T'
+        => if teqb T T' then Some t else None
+      | _, _ => None
+      end
+    end.
+  (**[]*)
+
+  Section TypingIff.
+    Hint Rewrite teqb_refl : core.
+    
+    Lemma typing_types : forall g e t,
+      g ⊢ e ∈ t -> types g e = Some t.
+    Proof.
+      intros g e t H;
+        induction H; simpl in *;
+          repeat match goal with
+                 | H: types ?g ?t = Some _
+                   |- context [types ?g ?t] => rewrite H; simpl
+                 end; autorewrite with core; auto.
+    Qed.
+
+    Local Hint Constructors typing : core.
+    Hint Rewrite teqb_eq : core.
+
+    Lemma types_typing : forall e g t,
+        types g e = Some t -> g ⊢ e ∈ t.
+    Proof.
+      intro e;
+        induction e as [n | T e IHe | e1 IHe1 e2 IHe2];
+        intros g t H; simpl in *; eauto.
+      - destruct (types (T :: g) e) as [t' |] eqn:Heq;
+          simpl in *; inv H; auto.
+      - destruct (types g e1) as [[| T T'] |] eqn:Heq1;
+          try discriminate.
+        destruct (types g e2) as [t' |] eqn:Heq2;
+          try discriminate.
+        destruct (teqb T t') eqn:Heqt; inv H.
+        autorewrite with core in *; subst; eauto.
+    Qed.
+
+    Local Hint Resolve typing_types : core.
+    Local Hint Resolve types_typing : core.
+
+    Lemma types_iff : forall g e t,
+        types g e = Some t <-> g ⊢ e ∈ t.
+    Proof. intuition. Qed.
+
+    Local Hint Resolve types_iff : core.
+    Local Hint Resolve typing_prefix : core.
+
+    Lemma types_prefix : forall G g e t,
+        types G e = Some t -> types (G ++ g) e = Some t.
+    Proof. auto. Qed.
+
+    Local Hint Resolve types_prefix : core.
+    Hint Rewrite types_iff : core.
+    
+    Lemma types_append : forall G g e t,
+        G ⊢ e ∈ t -> types (G ++ g) e = types G e.
+    Proof.
+      intros G g e t HG.
+      assert (Hg: (G ++ g) ⊢ e ∈ t) by auto.
+      rewrite <- types_iff in *.
+      rewrite HG; rewrite Hg; reflexivity.
+    Qed.
+  End TypingIff.
+
+  Section ListHyp.
+    Fixpoint list_type (t : type) : list type :=
+      match t with
+      | ⊥ => []
+      | T → t => T :: list_type T ++ list_type t
+      end.
+    (**[]*)
+
+    Fixpoint list_expr (g : list type) (e : expr) : list type :=
+      match types g e with
+      | None => []
+      | Some t => list_type t
+      end ++
+          match e with
+          | !_ => []
+          | λ t ⇒ e => list_expr (t :: g) e
+          | e1 ⋅ e2 => list_expr g e1 ++ list_expr g e2
+          end.
+    (**[]*)
+
+    Local Hint Resolve nth_error_length : core.
+    Local Hint Resolve types_append : core.
+
+    Lemma list_expr_append : forall e G g t,
+        G ⊢ e ∈ t -> list_expr (G ++ g) e = list_expr G e.
+    Proof.
+      intro e;
+        induction e as [n | T e IHe | e1 IHe1 e2 IHe2];
+        intros G g t Het; inv Het; simpl.
+      - assert (n < length G) by eauto.
+        rewrite nth_error_app1 by lia. reflexivity.
+      - rewrite app_comm_cons. erewrite IHe by eauto.
+        erewrite types_append by eauto. reflexivity.
+      - erewrite IHe1 by eauto. erewrite IHe2 by eauto.
+        repeat erewrite types_append by eauto. reflexivity.
+    Qed.
+  End ListHyp.
+  
+  Definition neutral (e : expr) : Prop :=
+    match e with
+    | ! _ | _ ⋅ _ => True
+    | λ _ ⇒ _ => False
+    end.
+  (**[]*)
+
+  Fixpoint R (g : list type) (e : expr) (t : type) : Prop :=
+    match t with
+    | ⊥ => SN e
+    | T → t => forall E, g ⊢ E ∈ T -> R g E T -> R g (e ⋅ E) t
+    end.
+  (**[]*)
+
+  Section RProp.
+    Local Hint Constructors typing : core.
+    Local Hint Constructors bred : core.
+    Local Hint Resolve bred_SN : core.
+    Local Hint Resolve multi_bred_SN : core.
+    Local Hint Resolve preservation : core.
+
+    Lemma CR2 : forall t g e e',
+        e -->  e' -> R g e t -> R g e' t.
+    Proof.
+      intro t;
+        induction t as [| t1 IHt1 t2 IHt2];
+        intros g e e' Hred HR; simpl in *;
+          intuition; eauto.
+    Qed.
+
+    Local Hint Resolve CR2 : core.
+    Local Hint Constructors Acc : core.
+    Local Hint Unfold SN : core.
+    Local Hint Unfold neutral : core.
+
+    Lemma CR1_CR3 : forall t,
+        (forall e g,
+            Forall (fun t => In t g) (list_type t) ->
+            g ⊢ e ∈ t -> R g e t -> SN e) /\
+        (forall e g,
+            Forall (fun t => In t g) (list_type t) ->
+            g ⊢ e ∈ t -> neutral e ->
+            (forall e', e -->  e' -> R g e' t) -> R g e t).
+    Proof.
+      intro t;
+        induction t as
+          [| t1 [IHt1_CR1 IHt1_CR3] t2 [IHt2_CR1 IHt2_CR3]];
+        split; simpl; try (intuition; eauto; assumption).
+      - intros e g HF Het HR. inv HF.
+        rewrite Forall_app in H2; intuition.
+        apply In_nth_error in H1 as [n Hnth].
+        assert (g ⊢ e ⋅ !n ∈ t2) by eauto.
+        assert (SN ((fun e => e ⋅ !n) e)).
+        { eapply IHt2_CR1; eauto.
+          apply HR; eauto.
+          apply IHt1_CR3; eauto.
+          intros ? Hn. inv Hn. }
+        eapply acc_pres with (f := fun e => e ⋅ !n); eauto; simpl.
+        intuition.
+      - intros e g HF Het Hneut HR. inv HF.
+        rewrite Forall_app in H2; intuition.
+        assert (g ⊢ e ⋅ E ∈ t2) by eauto.
+        assert (Hsn: SN E) by eauto. induction Hsn.
+        eapply IHt2_CR3; eauto.
+        intros e' He'; inv He'; simpl in *;
+          try contradiction; eauto 6.
+    Qed.
+    
+    Lemma CR1 : forall g e t,
+        Forall (fun t => In t g) (list_type t) ->
+        g ⊢ e ∈ t -> R g e t -> SN e.
+    Proof.
+      intros ? ? t.
+      pose proof CR1_CR3 t as [HCR1 _]. eauto 2.
+    Qed.
+
+    Lemma CR3 : forall g e t,
+        Forall (fun t => In t g) (list_type t) ->
+        g ⊢ e ∈ t -> neutral e ->
+        (forall e', e -->  e' -> R g e' t) -> R g e t.
+    Proof.
+      intros ? ? t.
+      pose proof CR1_CR3 t as [_ HCR3]. eauto 2.
+    Qed.
+
+    Local Hint Resolve CR1 : core.
+    Local Hint Resolve CR3 : core.
+    Local Hint Resolve Forall_impl : core.
+    Local Hint Resolve in_cons : core.
+    Local Hint Resolve beta_reduce_bred : core.
+    Local Hint Resolve sub_bred : core.
+
+    Lemma abs_red : forall g e T t,
+        Forall (fun t => In t g) (list_type (T → t)) ->
+        g ⊢ λ T ⇒ e ∈ T → t ->
+        (forall E, g ⊢ E ∈ T -> R g E T -> R g (beta_reduce e E) t) ->
+        R g (λ T ⇒ e) (T → t).
+    Proof.
+      intros g e T t HF Het HR;
+        inv HF; inv Het; simpl in *.
+      rewrite Forall_app in H2. intuition.
+      assert (Hbr: g ⊢ beta_reduce e E ∈ t) by eauto.
+      assert (Hsn: SN e).
+      { pose proof CR1 _ _ _ H3 Hbr (HR _ H2 H4) as Hsnbr.
+        unfold beta_reduce in *.
+        eapply acc_pres with (f := sub 0 [E]); eauto.
+        intuition. }
+      assert (HSN: SN E) by eauto.
+      revert e E Hsn HSN H2 H4 HR Hbr H0.
+      refine (Acc_ind2 _ _ _ _ _ _); intros.
+      eapply CR3; eauto.
+      intros e' He'; inv He'; eauto 8.
+      inv H10. eauto 8.
+    Qed.
+  End RProp.
+End JNorm.
