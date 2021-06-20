@@ -1,5 +1,5 @@
 Require Import Lambda.Util Coq.Program.Equality.
-Require Import FunctionalExtensionality.
+From Coq Require Extraction.
 
 (** Note: many of the helper lemmas
           and proof techniques
@@ -744,48 +744,6 @@ Module StrongNorm.
       - erewrite IHe1 by eauto. erewrite IHe2 by eauto.
         repeat erewrite types_append by eauto. reflexivity.
     Qed.
-
-    Local Hint Resolve nth_error_In : core.
-
-    Lemma type_in : forall g e t, g ⊢ e ∈ t -> In t g.
-    Proof.
-      intros g e t Hget; induction Hget; eauto.
-      - admit.
-      - admit.
-    Abort.
-
-    Lemma list_type_in : forall g e t,
-        g ⊢ e ∈ t -> Forall (fun t => In t g) (list_type t).
-    Proof.
-      intros g e t Hget; induction Hget; simpl in *.
-      - admit.
-      - constructor. admit.
-        rewrite Forall_app; intuition. admit. admit.
-      - inv IHHget1. rewrite Forall_app in H2. intuition.
-    Abort.
-
-    Lemma list_type_in : forall g n t,
-        nth_error g n = Some t ->
-        Forall (fun t => In t g) (list_type t).
-    Proof.
-      intro g;
-        induction g as [| T g IHg];
-        intros [| n] t Hnth; simpl in *; try discriminate.
-      - inv Hnth. admit.
-      - apply IHg in Hnth.
-        eapply Forall_impl in Hnth; eauto.
-        intuition.
-    Abort.
-
-    Lemma list_expr_in : forall g e t,
-        g ⊢ e ∈ t -> Forall (fun t => In t g) (list_expr g e).
-    Proof.
-      intros g e t Hget; induction Hget; simpl;
-        repeat erewrite typing_types by eauto; simpl.
-      - rewrite H. rewrite app_nil_r. admit.
-      - constructor. admit.
-        repeat rewrite Forall_app. intuition.
-    Abort.
   End ListHyp.
   
   Definition neutral (e : expr) : Prop :=
@@ -967,7 +925,7 @@ Module StrongNorm.
     Local Hint Resolve reduce_lemma : core.
     Local Hint Resolve typing_prefix : core.
 
-    Lemma typing_SN : forall g e t, g ⊢ e ∈ t -> SN e.
+    Theorem typing_SN : forall g e t, g ⊢ e ∈ t -> SN e.
     Proof.
       intros g e t Hget.
       assert (Happget: (g ++ list_expr g e) ⊢ e ∈ t) by eauto.
@@ -991,4 +949,144 @@ Module StrongNorm.
       replace e with (sub 0 [] e) in Happget at 2 by eauto using sub_nil. eauto.
     Qed.
   End RProp.
+
+  Fixpoint normal_order (e : expr) : option expr :=
+    match e with
+    | (λ _ ⇒ e1) ⋅ e2 => Some (beta_reduce e1 e2)
+    | λ t ⇒ e => match normal_order e with
+                | None => None
+                | Some e' => Some (λ t ⇒ e')
+                end
+    | e1 ⋅ e2 => match normal_order e1 with
+                | None => match normal_order e2 with
+                         | None => None
+                         | Some e2' => Some (e1 ⋅ e2')
+                         end
+                | Some e1' => Some (e1' ⋅ e2)
+                end
+    | ! _ => None
+    end.
+
+  Definition typed_expr (g : list type) (t : type) : Type :=
+    {e : expr | g ⊢ e ∈ t }.
+  (**[]*)
+
+  Section NormalOrder.
+    Local Hint Constructors bred : core.
+    
+    Lemma normal_order_bred : forall e e',
+      normal_order e = Some e' -> e -->  e'.
+    Proof.
+      intro e;
+        induction e as [? | t e IHe | e1 IHe1 e2 IHe2];
+        intros e' Hno; simpl in *; try discriminate.
+      - destruct (normal_order e) as [? |] eqn:Heq;
+          try discriminate. inv Hno. eauto.
+      - destruct (normal_order e1) as [e1' |] eqn:Heq1.
+        + destruct e1; inv Hno; eauto.
+        + destruct (normal_order e2)
+            as [e2' |] eqn:Heq2;
+            destruct e1; inv Hno; eauto.
+    Qed.
+
+    Local Hint Resolve normal_order_bred : core.
+    Local Hint Resolve preservation : core.
+
+    Lemma normal_order_preservation : forall e e',
+        normal_order e = Some e' ->
+        forall g t, g ⊢ e ∈ t -> g ⊢ e' ∈ t.
+    Proof.
+      eauto.
+    Qed.
+
+    Local Hint Resolve normal_order_preservation : core.
+
+    Definition normal_order_typed
+               g t (et : typed_expr g t) :
+      sumor {et' : typed_expr g t | proj1_sig et -->  proj1_sig et'}
+            (normal_order (proj1_sig et) = None).
+    Proof.
+      destruct (normal_order (proj1_sig et)) as [e' |] eqn:Heq.
+      - left. destruct et as [e He]; simpl in *.
+        assert (e -->  e') by eauto.
+        assert (He': g ⊢ e' ∈ t) by eauto.
+        refine (exist _ (exist _ e' He') _); auto.
+      - right; trivial.
+    Defined.
+  End NormalOrder.
+
+  Section Lemmas.
+    Lemma typed_expr_acc : forall g t (et : typed_expr g t),
+      Acc (fun (e' e : typed_expr g t) => proj1_sig e -->  proj1_sig e') et.
+    Proof.
+      intros g t [e Hget].
+      apply typing_SN in Hget as HSN.
+      unfold SN in HSN.
+      pose proof @acc_pres
+           (typed_expr g t) expr
+           (@proj1_sig expr (fun e => g ⊢ e ∈ t)) as H.
+      eapply H; eauto. intuition.
+    Qed.
+
+    Local Hint Resolve typed_expr_acc.
+
+    Lemma typed_expr_wf : forall g t,
+        well_founded
+          (fun (et' et : typed_expr g t) =>
+             proj1_sig et -->   proj1_sig et').
+    Proof.
+      unfold well_founded; auto.
+    Qed.
+
+    (*Definition normal_order_typed' g t (et : typed_expr g t)
+      : sumor
+          {et' : typed_expr g t | normal_order_typed _ _ et = Some et'}
+          (normal_order_typed _ _ et = None).
+    Proof.
+      destruct (normal_order_typed _ _ et)
+        as [et' |] eqn:Heq.
+      - left. refine (exist _ et' _). trivial.
+      - right. trivial.
+      Defined. *)       
+
+    Definition multi_normal_order_typed g t :
+      typed_expr g t -> typed_expr g t.
+    Proof.
+      refine
+        (Fix
+           (typed_expr_wf g t) (fun _ => typed_expr g t)
+           (fun (et: typed_expr g t)
+              (f: forall et': typed_expr g t,
+                  (proj1_sig et -->  proj1_sig et') -> typed_expr g t) =>
+              match normal_order_typed _ _ et with
+              | inleft obj => f (proj1_sig obj) _
+              | inright _ => et
+              end)).
+      destruct obj as [et' Heq]; auto.
+    Defined.
+  End Lemmas.
+
+  Definition multi_normal_order g e t :
+    g ⊢ e ∈ t -> expr :=
+    fun H => proj1_sig (multi_normal_order_typed _ _ (exist _ e H)).
+  (**[]*)
+
+  Module Examples.
+    Section Examples.
+      Local Hint Constructors typing : core.
+      
+      Let basic := λ ⊥ ⇒ !0.
+      
+      Example basic_typing : [] ⊢ basic ∈ ⊥ → ⊥.
+      Proof.
+        subst basic; auto.
+      Qed.
+
+      (** WTF? *)
+      Compute multi_normal_order _ _ _ basic_typing.
+      (** If I replace all [Qed]s with [Defined], this command does not terminate. *)
+    End Examples.
+  End Examples.
 End StrongNorm.
+
+Recursive Extraction StrongNorm.multi_normal_order.
