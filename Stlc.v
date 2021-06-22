@@ -484,6 +484,48 @@ Section Preservation.
   Qed.
 End Preservation.
 
+Section CanonicalForms.
+  Local Hint Constructors bred : core.
+  
+  Lemma canonical_forms_lambda : forall e T t,
+    [] ⊢ e ∈ T → t ->
+    (forall e', ~ e -->  e') ->
+    exists body, e = λ T ⇒ body.
+  Proof.
+    intro e;
+      induction e as [n | T' e IHe | e1 IHe1 e2 IHe2];
+      intros T t HeTt He; inv HeTt; simpl in *; eauto.
+    - rewrite nth_error_nil in H0; discriminate.
+    - exfalso. apply IHe1 in H1; eauto.
+      + destruct H1 as [e1' He1]; subst.
+        specialize He with (e' := beta_reduce e1' e2); auto.
+      + intros e1' He1.
+        specialize He with (e' := e1' ⋅ e2); auto.
+  Qed.
+End CanonicalForms.
+
+Section Progress.
+  Local Hint Constructors bred : core.
+
+  Theorem progress_thm : forall e t,
+      [] ⊢ e ∈ t ->
+      (exists e', e -->  e') \/ exists T v, e = λ T ⇒ v.
+  Proof.
+    intro e;
+      induction e as
+        [ n
+        | T e IHe
+        | e1 IHe1 e2 IHe2 ];
+      intros t Het; inv Het; eauto.
+    - rewrite nth_error_nil in H0; discriminate.
+    - pose proof IHe1 _ H1 as IH1; clear IHe1.
+      pose proof IHe2 _ H3 as IH2; clear IHe2.
+      destruct IH1 as [[e1' IH1] | [T1 [v1 IH1]]];
+        destruct IH2 as [[e2' IH2] | [T2 [v2 IH2]]];
+        subst; eauto.
+  Qed.
+End Progress.
+
 Notation "e '-->*' e'"
   := (refl_trans_closure bred e e')
        (at level 40, no associativity).
@@ -1037,17 +1079,6 @@ Module StrongNorm.
     Proof.
       unfold well_founded; auto.
     Qed.
-
-    (*Definition normal_order_typed' g t (et : typed_expr g t)
-      : sumor
-          {et' : typed_expr g t | normal_order_typed _ _ et = Some et'}
-          (normal_order_typed _ _ et = None).
-    Proof.
-      destruct (normal_order_typed _ _ et)
-        as [et' |] eqn:Heq.
-      - left. refine (exist _ et' _). trivial.
-      - right. trivial.
-      Defined. *)       
 
     Definition multi_normal_order_typed g t :
       typed_expr g t -> typed_expr g t.
