@@ -9,12 +9,14 @@ Ltac inv H := inversion H; subst; clear H.
 
 Ltac compare_destruct :=
   match goal with
+  | |- context [le_lt_dec ?a ?b]
+    => destruct (le_lt_dec a b) as [? | ?] eqn:?
   | |- context [lt_dec ?a ?b]
     => destruct (lt_dec a b) as [? | ?] eqn:?
   | |- context [lt_eq_lt_dec ?a ?b]
     => destruct (lt_eq_lt_dec a b) as [[? | ?] | ?] eqn:?
   | |- context [match ?n with 0 => _ | S _ => _ end]
-    => destruct n as [| ?]
+    => destruct n as [| ?] eqn:?
   end.
 (**[]*)
 
