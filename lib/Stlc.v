@@ -1,5 +1,4 @@
 Require Import Lambda.Util Coq.Program.Equality.
-From Coq Require Extraction.
 
 (** Note: many of the helper lemmas
           and proof techniques
@@ -645,7 +644,7 @@ Module StrongNorm.
 
     Local Hint Resolve teqb_eq : core.
     Hint Rewrite teqb_eq : core.
-    Hint Constructors Bool.reflect : core.
+    Local Hint Constructors Bool.reflect : core.
 
     Lemma teqb_reflect : forall t1 t2,
         Bool.reflect (t1 = t2) (teqb t1 t2).
@@ -1070,7 +1069,7 @@ Module StrongNorm.
       eapply H; eauto. intuition.
     Qed.
 
-    Local Hint Resolve typed_expr_acc.
+    Local Hint Resolve typed_expr_acc : core.
 
     Lemma typed_expr_wf : forall g t,
         well_founded
@@ -1114,10 +1113,12 @@ Module StrongNorm.
       Qed.
 
       (** WTF? *)
-      Compute multi_normal_order _ _ _ basic_typing.
-      (** If I replace all [Qed]s with [Defined], this command does not terminate. *)
+      (*Compute multi_normal_order _ _ _ basic_typing.*)
+      (** If I replace all [Qed]s with [Defined],
+          this command does not terminate. *)
     End Examples.
   End Examples.
 End StrongNorm.
 
-Recursive Extraction StrongNorm.multi_normal_order.
+(* From Coq Require Extraction. *)
+(* Recursive Extraction StrongNorm.multi_normal_order. *)

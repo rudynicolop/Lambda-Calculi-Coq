@@ -1,3 +1,9 @@
+# Build artifacts
+_build/
+*.exe
+*.install
+.merlin
+
 .*.aux
 .*.d
 *.a

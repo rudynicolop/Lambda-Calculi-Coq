@@ -1,22 +1,12 @@
-# Makefile originally taken from coq-club
+.PHONY: all build install clean
 
-%: Makefile.coq phony
-	+make -f Makefile.coq $@
+all: build
 
-all: Makefile.coq
-	+make -f Makefile.coq all
+build:
+	dune build -p lambda
 
-clean: Makefile.coq
-	+make -f Makefile.coq cleanall
-	rm -f Makefile.coq
+install:
+	dune install -p lambda
 
-Makefile.coq: _CoqProject Makefile
-	coq_makefile -f _CoqProject | sed 's/$$(COQCHK) $$(COQCHKFLAGS) $$(COQLIBS)/$$(COQCHK) $$(COQCHKFLAGS) $$(subst -Q,-R,$$(COQLIBS))/' > Makefile.coq
-
-_CoqProject: ;
-
-Makefile: ;
-
-phony: ;
-
-.PHONY: all clean phony
+clean:
+	dune clean -p lambda

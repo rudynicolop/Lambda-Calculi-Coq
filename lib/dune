@@ -1,0 +1,6 @@
+(coq.theory
+ (name Lambda)
+ (package lambda)
+ (synopsis "Lambda Calculus formalizations.")
+ (modules (:standard)))
+(include_subdirs qualified)

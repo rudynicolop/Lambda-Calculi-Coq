@@ -577,6 +577,27 @@ Section InjectStep.
   Proof. intros ? ? H; induction H; auto 2. Qed.
 End InjectStep.
 
+Section EXM.
+  Local Hint Constructors step : core.
+
+  Lemma step_exm : forall e,
+      (exists e', e -->  e') \/ (forall e', ~ e -->  e').
+  Proof.
+    intro e;
+      induction e as
+        [ n
+        | e [[e' IHe] | IHe]
+        | e1 [[e1' IHe1] | IHe1] e2 [[e2' IHe2] | IHe2]];
+      eauto.
+    - right; intros ? H; inv H.
+    - right; intros e' H; inv H.
+      intuition; eauto.
+    - destruct e1 as [? | e1 | ? ?]; eauto;
+      right; intros e' H; inv H;
+        intuition; eauto.
+  Qed.
+End EXM.
+
 Notation "e1 >->* e2" := (refl_trans_closure normal_reduce e1 e2) (at level 40).
 
 Theorem contrapositive : forall P Q : Prop,
@@ -658,54 +679,29 @@ Section Normalizing.
     - inv Heqle'. eauto.
     - inv H. eauto.
   Qed.
-
-  Theorem multi_step_normal_reduce : forall e e',
-      normal_form e' -> e -->* e' -> e >->* e'.
-  Proof.
-    intros e e' Hnf H; induction H; eauto; intuition.
-    apply step_normal_reduce in H as Hnor.
-    destruct Hnor as [e' Hnor].
-    apply normal_step in Hnor as Hns.
-    Check confluence.
-  Abort.
   
-  Let halts_step := halts_R step.
+  Definition sn (R : expr -> expr -> Prop) : expr -> Prop :=
+    Acc (fun e' e => R e e').
 
-  Lemma normal_form_halts : forall e, normal_form e -> halts_step e.
+  Local Hint Constructors Acc : core.
+  Local Hint Unfold sn : core.
+  
+  Theorem normal_order_sn : forall e,
+      sn step e -> sn normal_reduce e.
   Proof.
-    subst halts_step; unfold halts_R.
-    intros e H; exists e. intuition.
-    apply normal_form_step in H0; trivial; contradiction.
+    intros e Hsn; induction Hsn;
+      autounfold with core in *; eauto.
   Qed.
 
-  Let halts_nor := halts_R normal_reduce.
-
-  Local Hint Constructors step : core.
-  Local Hint Resolve normal_reduce_lambda : core.
-
-  Theorem normal_reduce_normalizing : forall e, halts_step e -> halts_nor e.
+  Goal forall e, sn step e -> sn cbv_reduce e.
   Proof.
-    subst halts_step; subst halts_nor; unfold halts_R.
-    intros e [e' [Hms Hhalt]].
-    induction Hms.
-    - exists a. intuition. eauto.
-    - intuition. (*
-    intro e; induction e as [n | e IHe | e1 IHe1 e2 IHe2];
-      intros [e' [He' He'']].
-    - inv He'.
-      + exists !n. intuition. eauto.
-      + inv H.
-    - apply multi_step_lambda in He' as He'lam; inv He'lam.
-      apply multi_step_lambda_step_inner in He'.
-      assert (He: exists e', e -->* e' /\ forall e'', ~ e' -->  e'').
-      { exists e0; intuition. apply He'' with (λ e''); eauto. }
-      apply IHe in He as [e' [IH IH']].
-      exists (λ e'). intuition; eauto. inv H. eauto.
-    - inv He'.
-      + exists (e1 ⋅ e2). intuition. eauto.
-      + inv H.
-        * *)
-  Abort.
+    intros e Hsn; induction Hsn;
+      unfold sn in *; eauto.
+    constructor.
+    intros e' He'.
+    assert (step x e') by eauto using cbv_step.
+    auto.
+  Qed.
 End Normalizing.
 
 Section Examples.
