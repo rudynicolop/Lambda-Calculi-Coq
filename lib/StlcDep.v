@@ -16,6 +16,8 @@ Section List.
     | h :: Δ => ((h = a) + Has a Δ)%type
     end.
 
+  Variant zilch : list A -> Prop := zilch_nil : zilch [].
+  
   Definition lookup :
     forall {Γ : list A} {n : nat},
       n < length Γ -> A.
@@ -294,3 +296,57 @@ Inductive bred {Γ} : forall {τ}, (Γ ⊢ τ)%term -> (Γ ⊢ τ)%term -> Prop 
     t₂ -->  t₂' ->
     (t₁ ⋅ t₂)%term -->  (t₁ ⋅ t₂')%term
 where "x '-->' y" := (bred x y) : type_scope.
+
+Local Hint Constructors bred : core.
+
+Variant value {Γ} : forall {τ}, (Γ ⊢ τ)%term -> Prop :=
+  Abs_value τ τ' (t : (τ :: Γ ⊢ τ')%term) : value (`λ t)%term.
+
+Lemma value_ex : forall Γ τ (t : (Γ ⊢ τ)%term),
+    value t ->
+    exists ρ σ (bdy : (ρ :: Γ ⊢ σ)%term), t ~= (`λ bdy)%term.
+Proof.
+  intros Γ τ t Hv; inv Hv; eauto.
+Qed.
+
+Local Hint Constructors value : core.
+
+Definition Type_of {A : Type} (_ : A) :  Type := A.
+
+Variant is_arrow : type -> Prop :=
+  Is_Arrow τ σ : is_arrow (τ → σ).
+
+(** Without [dependent induction], still needs axiom [Streicher K]. *)
+Lemma canonical_forms' : forall Γ τ (t : (Γ ⊢ τ)%term),
+    zilch Γ -> is_arrow τ ->
+    (forall t', ~ (t -->  t')) -> value t.
+Proof.
+  intros Γ τ t HΓ Hτ H;
+    induction t as [Γ n τ Hn | Γ τ ρ t IHt | Γ τ ρ t₁ IHt₁ t₂ _]; eauto.
+  - inv HΓ; inv Hτ; exfalso; clear H.
+    rewrite nth_error_nil in Hn.
+    discriminate.
+  - exfalso.
+    pose proof IHt₁ HΓ (Is_Arrow _ _) as IH; clear IHt₁.
+    assert (Ht₁ : forall t₁', ~ (t₁ -->  t₁')).
+    { intros t₁' Ht₁.
+      specialize H with (t':= (t₁' ⋅ t₂)%term); eauto. }
+    apply IH in Ht₁; clear IH; inv Ht₁.
+    (*Print Assumptions Eqdep.EqdepTheory.inj_pair2.*)
+    apply Eqdep.EqdepTheory.inj_pair2 in H3; subst.
+    specialize H with (t [[ t₂ ]])%term; auto.
+Qed.
+
+(* Print Assumptions canonical_forms'. *)
+
+Lemma canonical_forms : forall τ σ (t : ([] ⊢ τ → σ)%term),
+      (forall t', ~ (t -->  t')) ->
+    exists body, t = (`λ body)%term.
+Proof.
+  intros τ σ t H.
+  pose proof canonical_forms'
+       [] _ t zilch_nil (Is_Arrow _ _) H as H'; clear H; inv H'.
+  apply Eqdep.EqdepTheory.inj_pair2 in H; subst; eauto.
+Qed.
+
+(* Print Assumptions canonical_forms. *)
