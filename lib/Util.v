@@ -24,6 +24,10 @@ Ltac compare_destruct_star := repeat (compare_destruct; simpl).
 
 Ltac clean_compare := compare_destruct_star; try lia; auto.
 
+Ltac destroy_arith :=
+  intros; simpl; clean_compare;
+  try (f_equal; auto 2; lia).
+
 (** * Binary Relations *)
 
 Definition deterministic {A : Type} (R : A -> A -> Prop) : Prop :=
