@@ -349,4 +349,29 @@ Proof.
   apply Eqdep.EqdepTheory.inj_pair2 in H; subst; eauto.
 Qed.
 
-(* Print Assumptions canonical_forms. *)
+(*Check eq_rect.*)
+(*Print Assumptions canonical_forms.*)
+
+Theorem Progress' : forall Γ τ (t : (Γ ⊢ τ)%term),
+    zilch Γ ->
+    value t \/ exists t', t --> t'.
+Proof.
+  intros Γ τ t HΓ;
+    induction t as
+      [ Γ n τ Hn
+      | Γ τ ρ t IHt
+      | Γ τ ρ t₁ IHt₁ t₂ _]; eauto.
+  - inv HΓ; exfalso.
+    rewrite nth_error_nil in Hn; discriminate.
+  - right.
+    pose proof IHt₁ HΓ as [Ht₁ | (t₁' & Ht₁)]; clear IHt₁; eauto.
+    inv Ht₁; apply Eqdep.EqdepTheory.inj_pair2 in H;
+      subst; eauto.
+Qed.
+
+Theorem Progress : forall τ (t : ([] ⊢ τ)%term),
+    value t \/ exists t', t --> t'.
+Proof.
+  Local Hint Constructors zilch : core.
+  eauto using Progress'.
+Qed.
