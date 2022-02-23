@@ -166,3 +166,139 @@ Section Forall2.
       assumption.
   Qed.
 End Forall2.
+
+(** List helpers. *)
+
+Section List.
+  Context {A : Set}.
+
+  Fixpoint Has (a : A) (Γ : list A) : Set :=
+    match Γ with
+    | []    => Empty_set
+    | h :: Δ => ((h = a) + Has a Δ)%type
+    end.
+
+  Variant zilch : list A -> Prop := zilch_nil : zilch [].
+  
+  Definition lookup :
+    forall {Γ : list A} {n : nat},
+      n < length Γ -> A.
+  Proof.
+    refine
+      (fix F Γ n HnΓ :=
+         match Γ as Γ' return Γ = Γ' -> A with
+         | []
+           => fun HΓΓ' => _
+         | a :: Δ
+         => fun HΓΓ' =>
+             match n as n' return n = n' -> A with
+             | O   => fun _ => a
+             | S k => fun Hnn' => F Δ k _
+             end eq_refl
+         end eq_refl).
+    - inv HΓΓ'; cbn in *; lia.
+    - subst; cbn in *; lia.
+  Defined.
+  
+  (* Require Import Extraction.
+     Recursive Extraction lookup. *)
+
+  Definition length_nth_error' :
+    forall {l : list A} {n : nat},
+      n < length l -> { a | nth_error l n = Some a }.
+  Proof.
+    refine
+    (fix F l n Hnl :=
+       match
+         l as l'
+         return
+         l = l' -> { a | nth_error l n = Some a } with
+       | [] => fun H => _
+       | h :: t
+         => fun H =>
+             match
+               n as n'
+               return
+               n = n' -> { a | nth_error l n = Some a } with
+             | O
+               => fun _ => @exist _ _ h _
+             | S k
+               => fun Hnn' =>
+                   match F t k _ with
+                   | exist _ a' Hk => @exist _ _ a' _
+                   end
+             end eq_refl
+       end eq_refl); subst; cbn in *;
+      lia || reflexivity || assumption.
+  Defined.
+
+
+  Definition nth_error_lookup :
+    forall {Γ : list A} {n : nat} (H : n < length Γ),
+      nth_error Γ n = Some (lookup H).
+  Proof.
+    intro l; induction l as [| a l IHl];
+      intros [| n] H; cbn in *;
+        try lia; eauto using Lt.lt_S_n.
+  Defined.
+
+  Definition ext' : forall {Γ Δ},
+      (forall a, Has a Γ -> Has a Δ) ->
+      forall b a, Has a (b :: Γ) -> Has a (b :: Δ).
+  Proof.
+    refine
+      (fun l d f b a H =>
+         match l as l' return l = l' -> Has a (b :: d) with
+         | [] => fun Hl => inl _
+         | h :: t
+           => fun Hl =>
+               match H with
+               | inl Hh => inl Hh
+               | inr Ht => inr (f _ Ht)
+               end
+         end eq_refl); subst; cbn in *.
+    destruct H as [H | H]; subst; reflexivity || contradiction.
+  Defined.
+
+  Definition Has_nth_error : forall {Γ a},
+      Has a Γ -> { n | nth_error Γ n = Some a}.
+  Proof.
+    intro l; induction l as [| h t IHt];
+      intros a Hal; cbn in *; try contradiction.
+    destruct Hal as [Hha | Hat]; subst.
+    - refine (exist _ 0 _); reflexivity.
+    - apply IHt in Hat as [k Hk].
+      refine (exist _ (S k) _); assumption.
+  Defined.
+
+  Definition nth_error_Has : forall {Γ a n},
+      nth_error Γ n = Some a -> Has a Γ.
+  Proof.
+    intro l; induction l as [| h t IHt];
+      intros a [| n] Hnth; cbn in *; try discriminate.
+    - inv Hnth; left; reflexivity.
+    - apply IHt in Hnth; right; assumption.
+  Defined.
+
+  Definition nth_error_Has' : forall {Γ a},
+      {n | nth_error Γ n = Some a} -> Has a Γ.
+  Proof.
+    intros l a [n H]; exact (nth_error_Has H).
+  Defined.
+
+  Fail Definition nth_error_Has : forall {Γ a},
+      Has a Γ <-> {n | nth_error Γ n = Some a}.
+  
+  Definition ext : forall {Γ Δ : list A},
+      (forall a, {n | nth_error Γ n = Some a} ->
+              {k | nth_error Δ k = Some a}) ->
+      forall b a, {n | nth_error (b :: Γ) n = Some a} ->
+               {k | nth_error (b :: Δ) k = Some a}.
+  Proof.
+    intros l d f b a Hab.
+    apply Has_nth_error.
+    apply nth_error_Has' in Hab.
+    pose proof (fun a H => nth_error_Has' (f a (Has_nth_error H))) as H.
+    eauto using ext'.
+  Defined.
+End List.

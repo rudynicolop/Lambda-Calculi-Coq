@@ -14,4 +14,5 @@ install: [
 ]
 depends: [
   "coq" {build}
+  "coq-equations" {build}
 ]
