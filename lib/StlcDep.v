@@ -1,7 +1,7 @@
 Require Export Lambda.SimpleTypes.
 From Equations Require Import Equations.
 
-(** * Dependently Typed Lambda Calculus. *)
+(** * Simply Typed Lambda Calculus. *)
 
 (** Inspired by
     Programming Language Foundations in Agda. *)
@@ -24,7 +24,7 @@ Inductive term (Γ : list type) : type -> Set :=
 where "Γ '⊢' τ" := (term Γ τ) : type_scope.
 
 Derive Signature for term.
-Equations Derive NoConfusion NoConfusionHom Subterm for type.
+Set Debug "backtrace".
 Equations Derive NoConfusion NoConfusionHom Subterm for term.
 
 Local Hint Constructors term : core.

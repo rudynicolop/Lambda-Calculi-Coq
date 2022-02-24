@@ -1,9 +1,12 @@
 Require Export Lambda.Util Coq.Program.Equality.
+From Equations Require Import Equations.
 
 Inductive type : Set :=
 | Base
 | Arrow (t1 t2 : type).
 (**[]*)
+
+Equations Derive NoConfusion NoConfusionHom Subterm for type.
 
 Declare Scope ty_scope.
 Delimit Scope ty_scope with ty.
