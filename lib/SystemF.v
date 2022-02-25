@@ -37,12 +37,8 @@ Equations LT_LE : forall {n m : nat}, n `< m -> n ≤ m :=
 Lemma whyme : forall m n : nat,
     (forall r, r <= m -> r <= n) -> m <= n.
 Proof.
-  intros m n; generalize dependent m.
-  induction n as [| n IHn]; intros [| m] h.
-  - constructor.
-  - apply h. constructor.
-  - apply Nat.le_0_l.
-  - apply h. constructor.
+  intros m n h.
+  apply h. constructor.
 Qed.
 
 Equations LE_0_l : forall n : nat, 0 ≤ n :=
@@ -51,40 +47,48 @@ Equations LE_0_l : forall n : nat, 0 ≤ n :=
 
 Print whyme.
 
-Equations bruh : forall (n m : nat), (forall r, r ≤ m -> r ≤ n) -> m ≤ n :=
-  bruh 0 0 ρ     := LE_n _;
-  bruh 0 (S m) ρ := ρ _ (LE_n _);
-  bruh (S n) 0 ρ := LE_0_l n;
-  bruh (S n) (S m) ρ
+Definition bruh (n m : nat) (ρ : forall r, r ≤ m -> r ≤ n) : m ≤ n := ρ m (LE_n m).
 
 Lemma helpme : forall m n : nat,
     (forall r, r < m -> r < n) -> m <= n.
 Proof.
-  intros m n; generalize dependent m.
-  induction n as [| n IHn]; intros [| m] h; try lia.
-  - apply h. constructor.
+  intros m n h.
+  unfold "<" in *.
+  destruct m as [| m].
+  - apply PeanoNat.Nat.le_0_l.
   - apply h. constructor.
 Qed.
+
+Print helpme.
+
+Equations bruh' : forall (m n : nat), (forall r, r `< m -> r `< n) -> m ≤ n :=
+  bruh' 0     n _ := LE_0_l n;
+  bruh' (S m) n ρ := ρ m (LE_n (S m)).
 
 Lemma ext_lt : forall (m n s : nat),
     (forall r, r < m -> r < n) -> s < S m -> s < S n.
 Proof.
   intros m n s Q h.
-  assert (Hmn: m <= n) by auto using helpme.
-  lia.
+  unfold "<" in *.
+  inversion h; subst.
+  - clear h. apply le_n_S.
+    auto using helpme.
+  - constructor. apply Q,H0.
 Qed.
+
+Print ext_lt.
 
 Definition ext_LT {Δ₁ Δ₂ : nat} (ρ : forall n, n `< Δ₁ -> n `< Δ₂)
   : forall n, n `< S Δ₁ -> n `< S Δ₂.
 Proof.
   unfold "`<" in *.
-  pose proof @ext_LE Δ₁ Δ₂ as E.
-  intros n h.
-  pose proof (fun f => E f _ h) as H; clear E h.
-  apply H; clear H n.
-  intros k h. specialize ρ with k.
-  apply LT_LE,ρ; clear ρ.
-Admitted.
+  intros n h. inversion h; subst.
+  - clear h.
+    apply S_LE.
+    auto using bruh'.
+  - constructor.
+    apply ρ, H0.
+Defined.
 
 Inductive type (Δ : nat) : Set :=
 | TId n : n `< Δ -> type Δ
@@ -114,7 +118,7 @@ Equations S_type : forall {Δ : nat}, type Δ -> type (S Δ) :=
 Equations rename_type : forall {Δ₁ Δ₂ : nat},
     (forall n, n `< Δ₁ -> n `< Δ₂) -> type Δ₁ -> type Δ₂ :=
   rename_type ρ (TId _ h)    := TId _ (ρ _ h);
-  rename_type ρ (∀ τ)%ty     := (∀ rename_type _ τ)%ty;
+  rename_type ρ (∀ τ)%ty     := (∀ rename_type (ext_LT ρ) τ)%ty;
   rename_type ρ (τ₁ → τ₂)%ty := (rename_type ρ τ₁ → rename_type ρ τ₂)%ty.
 
 Definition exts_type : forall {Δ₁ Δ₂ : nat},
