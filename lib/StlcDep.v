@@ -163,6 +163,7 @@ Local Hint Constructors bred : core.
 
 Variant value {Γ} : forall {τ}, Γ ⊢ τ -> Prop :=
   Abs_value τ τ' (t : τ :: Γ ⊢ τ') : value (`λ t)%term.
+Derive Signature for value.
 
 Lemma value_ex : forall Γ τ (t : Γ ⊢ τ),
     value t ->
@@ -175,8 +176,8 @@ Local Hint Constructors value : core.
 
 Variant is_arrow : type -> Prop :=
   Is_Arrow τ σ : is_arrow (τ → σ).
+Derive Signature for is_arrow.
 
-(** Without [dependent induction], still needs axiom [Streicher K]. *)
 Lemma canonical_forms' : forall Γ τ (t : Γ ⊢ τ),
     zilch Γ -> is_arrow τ ->
     (forall t', ~ (t -->  t')) -> value t.
@@ -191,13 +192,12 @@ Proof.
     assert (Ht₁ : forall t₁', ~ (t₁ -->  t₁')).
     { intros t₁' Ht₁.
       specialize H with (t':= (t₁' ⋅ t₂)%term); eauto. }
-    apply IH in Ht₁; clear IH; inv Ht₁.
-    (*Print Assumptions Eqdep.EqdepTheory.inj_pair2.*)
-    apply Eqdep.EqdepTheory.inj_pair2 in H3; subst.
+    apply IH in Ht₁; clear IH.
+    depelim Ht₁.
     specialize H with (t [[ t₂ ]])%term; auto.
 Qed.
 
-(* Print Assumptions canonical_forms'. *)
+(*Print Assumptions canonical_forms'.*)
 
 Lemma canonical_forms : forall τ σ (t : [] ⊢ τ → σ),
       (forall t', ~ (t -->  t')) ->
@@ -205,12 +205,9 @@ Lemma canonical_forms : forall τ σ (t : [] ⊢ τ → σ),
 Proof.
   intros τ σ t H.
   pose proof canonical_forms'
-       [] _ t zilch_nil (Is_Arrow _ _) H as H'; clear H; inv H'.
-  apply Eqdep.EqdepTheory.inj_pair2 in H; subst; eauto.
+       [] _ t zilch_nil (Is_Arrow _ _) H as H'; clear H.
+  depelim H'; eauto.
 Qed.
-
-(*Check eq_rect.*)
-(*Print Assumptions canonical_forms.*)
 
 Theorem Progress' : forall Γ τ (t : Γ ⊢ τ),
     zilch Γ ->
@@ -225,8 +222,7 @@ Proof.
     rewrite nth_error_nil in Hn; discriminate.
   - right.
     pose proof IHt₁ HΓ as [Ht₁ | (t₁' & Ht₁)]; clear IHt₁; eauto.
-    inv Ht₁; apply Eqdep.EqdepTheory.inj_pair2 in H;
-      subst; eauto.
+    depelim Ht₁; eauto.
 Qed.
 
 Theorem Progress : forall τ (t : [] ⊢ τ),
