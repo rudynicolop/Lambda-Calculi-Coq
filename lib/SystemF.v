@@ -13,7 +13,7 @@ Inductive LE (n : nat) : nat -> Set :=
 where "x ≤ y" := (LE x y) : type_scope.
 
 Derive Signature for LE.
-Equations Derive NoConfusion NoConfusionHom Subterm for LE.
+Equations Derive NoConfusion (*NoConfusionHom*) (*Subterm*) for LE.
 
 Equations S_LE : forall {n m}, n ≤ m -> S n ≤ S m :=
   S_LE (LE_n n) := LE_n (S n);
@@ -34,51 +34,17 @@ Equations LT_LE : forall {n m : nat}, n `< m -> n ≤ m :=
   LT_LE (LE_n _)     := LE_S _ _ (LE_n _);
   LT_LE (LE_S _ _ h) := LE_S _ _ (LT_LE h).
 
-Lemma whyme : forall m n : nat,
-    (forall r, r <= m -> r <= n) -> m <= n.
-Proof.
-  intros m n h.
-  apply h. constructor.
-Qed.
-
 Equations LE_0_l : forall n : nat, 0 ≤ n :=
   LE_0_l 0     := LE_n _;
   LE_0_l (S n) := LE_S _ _ (LE_0_l n).
 
 Definition LT_0_l (n : nat) : 0 `< S n := S_LE (LE_0_l n).
 
-Print whyme.
-
 Definition bruh (n m : nat) (ρ : forall r, r ≤ m -> r ≤ n) : m ≤ n := ρ m (LE_n m).
-
-Lemma helpme : forall m n : nat,
-    (forall r, r < m -> r < n) -> m <= n.
-Proof.
-  intros m n h.
-  unfold "<" in *.
-  destruct m as [| m].
-  - apply PeanoNat.Nat.le_0_l.
-  - apply h. constructor.
-Qed.
-
-Print helpme.
 
 Equations bruh' : forall (m n : nat), (forall r, r `< m -> r `< n) -> m ≤ n :=
   bruh' 0     n _ := LE_0_l n;
   bruh' (S m) n ρ := ρ m (LE_n (S m)).
-
-Lemma ext_lt : forall (m n s : nat),
-    (forall r, r < m -> r < n) -> s < S m -> s < S n.
-Proof.
-  intros m n s Q h.
-  unfold "<" in *.
-  inversion h; subst.
-  - clear h. apply le_n_S.
-    auto using helpme.
-  - constructor. apply Q,H0.
-Qed.
-
-Print ext_lt.
 
 Definition ext_LT {Δ₁ Δ₂ : nat} (ρ : forall n, n `< Δ₁ -> n `< Δ₂)
   : forall n, n `< S Δ₁ -> n `< S Δ₂.
@@ -174,4 +140,4 @@ Inductive term : forall {Δ : nat}, list (type Δ) -> type Δ -> Set :=
 where "Γ '⊢' τ" := (term Γ τ).
 
 Derive Signature for term.
-Equations Derive NoConfusion (* NoConfusionHom *) Subterm for term.
+Equations Derive NoConfusion (* NoConfusionHom *) (*Subterm*) for term.

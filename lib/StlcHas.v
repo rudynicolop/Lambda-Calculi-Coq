@@ -8,14 +8,14 @@ From Equations Require Import Equations.
 
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 
-Inductive term (Γ : list type) : type -> Set :=
-| Id (τ : type) :
+Inductive term : list type -> type -> Set :=
+| Id (Γ : list type) (τ : type) :
   Has τ Γ ->
   Γ ⊢ τ
-| Abs (τ τ' : type) :
+| Abs (Γ : list type) (τ τ' : type) :
   τ :: Γ ⊢ τ' ->
   Γ ⊢ τ → τ'
-| App (τ τ' : type) :
+| App (Γ : list type) (τ τ' : type) :
   Γ ⊢ τ → τ' ->
   Γ ⊢ τ ->
   Γ ⊢ τ'

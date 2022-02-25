@@ -10,22 +10,21 @@ From Equations Require Import Equations.
 
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 
-Inductive term (Γ : list type) : type -> Set :=
-| Id (n : nat) (τ : type) :
+Inductive term : list type -> type -> Set :=
+| Id (Γ : list type) (n : nat) (τ : type) :
     nth_error Γ n = Some τ ->
     Γ ⊢ τ
-| Abs (τ τ' : type) :
+| Abs (Γ : list type) (τ τ' : type) :
     τ :: Γ ⊢ τ' ->
     Γ ⊢ τ → τ'
-| App (τ τ' : type) :
+| App (Γ : list type) (τ τ' : type) :
     Γ ⊢ τ → τ' ->
     Γ ⊢ τ ->
     Γ ⊢ τ'
 where "Γ '⊢' τ" := (term Γ τ) : type_scope.
 
 Derive Signature for term.
-Set Debug "backtrace".
-(*Equations Derive NoConfusion NoConfusionHom Subterm for term.*)
+Equations Derive NoConfusion NoConfusionHom Subterm for term.
 
 Local Hint Constructors term : core.
 
@@ -90,16 +89,14 @@ Notation "x '`⋅' y"
        (at level 14, left associativity) : term_scope.
 Set Warnings "non-reversible-notation".
 
-Fixpoint Rename
-         {Γ Δ}
-         (f: forall τ, {n | nth_error Γ n = Some τ} ->
-                  {k | nth_error Δ k = Some τ})
-         {σ} (t: Γ ⊢ σ) : Δ ⊢ σ :=
-  match t with
-  | Id _ _ _ Hm     => term_of_nth_error (f _ (exist _ _ Hm))
-  | Abs _ ρ _ t'    => (`λ Rename (ext f ρ) t')%term
-  | App _ _ _ t₁ t₂ => (Rename f t₁ ⋅ Rename f t₂)%term
-  end.
+Equations
+  Rename
+  {Γ Δ} :
+  (forall τ, {n | nth_error Γ n = Some τ} ->
+        {k | nth_error Δ k = Some τ}) -> forall {σ}, Γ ⊢ σ -> Δ ⊢ σ :=
+      Rename f (Id _ _ _ Hm)   := term_of_nth_error (f _ (exist _ _ Hm));
+      Rename f (λ ρ ⇒ t')%term := (`λ Rename (ext f ρ) t')%term;
+      Rename f (t₁ ⋅ t₂)%term  := (Rename f t₁ ⋅ Rename f t₂)%term.
 
 Definition exts' : forall {Γ Δ},
     (forall τ, Has τ Γ -> Δ ⊢ τ) ->
@@ -124,15 +121,13 @@ Proof.
   exact (exts' f' H).
 Defined.
 
-Fixpoint subs
-         {Γ Δ}
-         (f : forall τ, {n | nth_error Γ n = Some τ} -> Δ ⊢ τ)
-         {σ} (t : Γ ⊢ σ) : Δ ⊢ σ :=
-  match t with
-  | Id _ _ _ Hn => f _ (exist _ _ Hn)
-  | Abs _ ρ _ t' => (`λ subs (exts f ρ) t')%term
-  | App _ _ _ t₁ t₂ => (subs f t₁ ⋅ subs f t₂)%term
-  end.
+Equations
+  subs : forall {Γ Δ},
+    (forall τ, {n | nth_error Γ n = Some τ} -> Δ ⊢ τ) ->
+    forall {σ}, Γ ⊢ σ -> Δ ⊢ σ :=
+  subs f (Id _ _ _ Hn)   := f _ (exist _ _ Hn);
+  subs f (λ ρ ⇒ t')%term := (`λ subs (exts f ρ) t')%term;
+  subs f (t₁ ⋅ t₂)%term  := (subs f t₁ ⋅ subs f t₂)%term.
 
 Definition sub
            {Γ τ σ}
@@ -142,8 +137,7 @@ Proof.
   intros ρ [n Hρ].
   destruct n as [| n]; cbn in *.
   - inv Hρ. apply arg.
-  - Check @term_of_nth_error.
-    eauto using term_of_nth_error.
+  - eauto using term_of_nth_error.
 Defined.
 
 Notation "x '[[' y ']]'"
