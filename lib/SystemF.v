@@ -45,6 +45,8 @@ Equations LE_0_l : forall n : nat, 0 ≤ n :=
   LE_0_l 0     := LE_n _;
   LE_0_l (S n) := LE_S _ _ (LE_0_l n).
 
+Definition LT_0_l (n : nat) : 0 `< S n := S_LE (LE_0_l n).
+
 Print whyme.
 
 Definition bruh (n m : nat) (ρ : forall r, r ≤ m -> r ≤ n) : m ≤ n := ρ m (LE_n m).
@@ -122,33 +124,54 @@ Equations rename_type : forall {Δ₁ Δ₂ : nat},
   rename_type ρ (τ₁ → τ₂)%ty := (rename_type ρ τ₁ → rename_type ρ τ₂)%ty.
 
 Definition exts_type : forall {Δ₁ Δ₂ : nat},
-    (forall n, n `< Δ₁ -> type Δ₂) -> n `< S Δ₁ -> type (S Δ₂).
+    (forall n, n `< Δ₁ -> type Δ₂) -> forall n, n `< S Δ₁ -> type (S Δ₂).
+Proof.
+  intros Δ₁ Δ₂ σ n h.
+  inversion h; subst.
+  - refine (TId 0 (LT_0_l _)).
+  - refine (rename_type (fun _ => id) (S_type (σ _ H0))).
+Defined.
 
 Equations subs_type : forall {Δ₁ Δ₂ : nat},
-    (forall n, n `< Δ₁ -> type Δ₂) -> type Δ₁ -> type Δ₂.
+    (forall n, n `< Δ₁ -> type Δ₂) -> type Δ₁ -> type Δ₂ :=
+  subs_type σ (TId _ hn)  := σ _ hn;
+  subs_type σ (τ → τ')%ty := (subs_type σ τ → subs_type σ τ')%ty;
+  subs_type σ (∀ τ)%ty    := (∀ subs_type (exts_type σ) τ)%ty.
 
 Definition sub_type : forall {Δ : nat}, type (S Δ) -> type Δ -> type Δ.
+Proof.
+  intros Δ body arg.
+  refine (subs_type _ body).
+  clear body. intros n h.
+  inversion h; subst.
+  - apply arg.
+  - clear arg.
+    apply (TId n H0).
+Defined.
+
+Notation "x '`[[' y ']]'"
+  := (sub_type x y) (at level 12, no associativity) : ty_scope.
 
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 
-Inductive term {Δ : nat} (Γ : list (type Δ)) : type Δ -> Set :=
-| Id (τ : type Δ) :
+Inductive term : forall {Δ : nat}, list (type Δ) -> type Δ -> Set :=
+| Id {Δ : nat} (Γ : list (type Δ)) (τ : type Δ) :
   Has τ Γ ->
   Γ ⊢ τ
-| Abs (τ τ' : type Δ) :
+| Abs {Δ : nat} (Γ : list (type Δ)) (τ τ' : type Δ) :
   τ :: Γ ⊢ τ' ->
   Γ ⊢ (τ → τ')%ty
-| App (τ τ' : type Δ) :
+| App {Δ : nat} (Γ : list (type Δ)) (τ τ' : type Δ) :
   Γ ⊢ (τ → τ')%ty ->
   Γ ⊢ τ ->
   Γ ⊢ τ'
-| TypAbs (τ : type (S Δ)) :
+| TypAbs {Δ : nat} (Γ : list (type Δ)) (τ : type (S Δ)) :
   map S_type Γ ⊢ τ ->
   Γ ⊢ (∀ τ)%ty
-| TypApp (τ : type (S Δ)) (τ' : type Δ) :
+| TypApp {Δ : nat} (Γ : list (type Δ)) (τ : type (S Δ)) (τ' : type Δ) :
   Γ ⊢ (∀ τ)%ty ->
-  Γ ⊢ τ `[[ τ' ]]
+  Γ ⊢ (τ `[[ τ' ]])%ty
 where "Γ '⊢' τ" := (term Γ τ).
 
 Derive Signature for term.
-Equations Derive NoConfusion NoConfusionHom Subterm for term.
+Equations Derive NoConfusion (* NoConfusionHom *) Subterm for term.

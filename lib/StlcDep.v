@@ -25,7 +25,7 @@ where "Γ '⊢' τ" := (term Γ τ) : type_scope.
 
 Derive Signature for term.
 Set Debug "backtrace".
-Equations Derive NoConfusion NoConfusionHom Subterm for term.
+(*Equations Derive NoConfusion NoConfusionHom Subterm for term.*)
 
 Local Hint Constructors term : core.
 
@@ -142,7 +142,8 @@ Proof.
   intros ρ [n Hρ].
   destruct n as [| n]; cbn in *.
   - inv Hρ. apply arg.
-  - eauto using term_of_nth_error.
+  - Check @term_of_nth_error.
+    eauto using term_of_nth_error.
 Defined.
 
 Notation "x '[[' y ']]'"
