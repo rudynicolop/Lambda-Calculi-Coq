@@ -33,6 +33,77 @@ Equations S_impl_LE : forall {n m}, S n ≤ S m -> n ≤ m :=
   S_impl_LE (LE_n (S n)) := LE_n n;
   S_impl_LE (LE_S n (S m) h) := LE_S _ _ (S_impl_LE h).
 
+Lemma not_S_n_LE_n : forall (n : nat), S n ≤ n -> Empty_set.
+Proof.
+  intros n h; induction n as [| n ih].
+  - inv h.
+  - apply S_impl_LE,ih in h.
+    apply h.
+Defined.
+
+Lemma LE_n_eq : forall {n : nat} (h : n ≤ n), h = LE_n n.
+Proof.
+  intros n h; depelim h.
+  - inv H. apply inj_right_pair in H1; subst. reflexivity.
+  - exfalso. apply not_S_n_LE_n in h. inv h.
+Defined.
+
+Equations Derive NoConfusionHom for LE.
+Next Obligation.
+  unfold NoConfusionHom_LE in H.
+  depelim a; depelim b; cbn in *; subst; try contradiction.
+  - rewrite LE_n_eq; reflexivity.
+  - reflexivity.
+Defined.
+Next Obligation.
+  unfold noConfusionHom_LE_obligation_2,
+    noConfusionHom_LE_obligation_1.
+  unfold NoConfusionHom_LE in *.
+  depelim a; depelim b; cbn in *; subst; try contradiction.
+  - pose proof LE_n_eq b0 as b0eq; subst.
+    unfold eq_ind_r,eq_ind, eq_sym,LE_n_eq.
+    unfold eq_ind_r,eq_ind,eq_sym,inj_right_pair,f_equal.
+    rewrite eq_dec_refl.
+    unfold K_dec.
+    rewrite <- Eqdep_dec.eq_rect_eq_dec.
+    + depelim e; reflexivity.
+    + intros x y. left.
+      rewrite Eqdep_dec.UIP_refl_nat with (x := x).
+      rewrite Eqdep_dec.UIP_refl_nat with (x := y).
+      reflexivity.
+  - unfold eq_ind_r,eq_ind, eq_sym; reflexivity.
+Defined.
+Next Obligation.
+  unfold noConfusionHom_LE_obligation_1.
+  unfold NoConfusionHom_LE in *.
+  depelim b.
+  - unfold eq_ind_r,eq_ind, eq_sym, LE_n_eq.
+    unfold eq_ind_r,eq_ind,eq_sym,inj_right_pair,f_equal.
+    rewrite eq_dec_refl.
+    unfold K_dec.
+    rewrite <- Eqdep_dec.eq_rect_eq_dec; try reflexivity.
+    + intros x y. left.
+      rewrite Eqdep_dec.UIP_refl_nat with (x := x).
+      rewrite Eqdep_dec.UIP_refl_nat with (x := y).
+      reflexivity.
+  - unfold eq_ind_r,eq_ind, eq_sym; reflexivity.
+Defined.
+
+Equations Derive Subterm for LE.
+   
+
+Lemma LE_eq : forall {n m : nat} (h h' : n ≤ m), h = h'.
+Proof.
+  intros n m; generalize dependent n.
+  induction m as [| m ih]; intros n h h'.
+  - depelim h; depelim h'; reflexivity.
+  - destruct n as [| n].
+    + depelim h; depelim h'.
+      pose proof ih 0 h h' as H; rewrite H; reflexivity.
+    + pose proof S_impl_LE h as H.
+      pose proof S_impl_LE h' as H'.
+      pose
+    
 Equations ext_LE : forall {Δ₁ Δ₂ : nat},
     (forall n, n ≤ Δ₁ -> n ≤ Δ₂) -> forall {n : nat}, n ≤ S Δ₁ -> n ≤ S Δ₂ :=
   ext_LE ρ (LE_n _)     := S_LE (ρ _ (LE_n _));
@@ -92,6 +163,22 @@ Equations S_type : forall {Δ : nat}, type Δ -> type (S Δ) :=
   S_type (TId n h)    := TId (S n) (S_LT h);
   S_type (∀ τ)%ty     := (∀ S_type τ)%ty;
   S_type (τ₁ → τ₂)%ty := (S_type τ₁ → S_type τ₂)%ty.
+
+Equations type_eq_dec : forall {Δ : nat} (τ ρ : type Δ), {τ = ρ} + {τ <> ρ} :=
+  type_eq_dec (TId n _) (TId m _) with Nat.eq_dec n m => {
+    | left _     => left _
+    | right hneq => right _ };
+  type_eq_dec (∀ τ)%ty (∀ ρ)%ty with type_eq_dec τ ρ => {
+    | left _     => left _
+    | right hneq => right _ };
+  type_eq_dec (τ → τ')%ty (ρ → ρ')%ty with type_eq_dec τ ρ => {
+    | right hneq => right _
+    | left _ with type_eq_dec τ' ρ' => {
+      | right hneq => right _
+      | left _     => left _ } };
+  type_eq_dec _ _ := right _.
+Next Obligation.
+
 
 Equations rename_type : forall {Δ₁ Δ₂ : nat},
     (forall n, n `< Δ₁ -> n `< Δ₂) -> type Δ₁ -> type Δ₂ :=
@@ -210,3 +297,48 @@ Notation "'Λ' x"
 Notation "t '⦗' τ '⦘'"
   := (TypApp _ _ τ t)
        (at level 39, left associativity) : term_scope.
+
+Definition has_map : forall (A B : Set) (f : A -> B) (l : list A) b,
+    Has b (map f l) -> {a : A & f a = b & Has a l}.
+Proof.
+  intros A B f l.
+  induction l as [| a l ih]; intros b h; cbn in *.
+  - inv h.
+  - destruct h as [h | h].
+    + exact (existT2 _ _ a h (inl eq_refl)).
+    + apply ih in h as [a' fab hasa].
+      exact (existT2 _ _ a' fab (inr hasa)).
+Defined.
+
+Definition S_Renamer : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
+    (forall τ : type Δ, Has τ Γ₁ -> Has τ Γ₂) ->
+    forall τ : type (S Δ), Has τ (map S_type Γ₁) -> Has τ (map S_type Γ₂).
+Proof.
+  intros Δ Γ₁.
+  induction Γ₁ as [| τ₁ Γ₁ ih]; intros [| τ₂ Γ₂] f τ h; cbn in *.
+  - inv h.
+  - inv h.
+  - destruct h as [h | h]; subst.
+    + specialize f with (τ := τ₁).
+      apply f. left; reflexivity.
+    + apply has_map in h as [τ' τ'eq hasτ'].
+      specialize f with (τ := τ').
+      apply f. right; apply hasτ'.
+  - destruct h as [h | h]; subst.
+    + pose proof f τ₁ (inl eq_refl) as h.
+      destruct h as [h | h]; subst.
+      * left; reflexivity.
+      * right. apply ih.
+        intros τ hτ.
+        pose proof f _ (inr hτ) as h'.
+        destruct h' as [h' | h']; subst.
+        -- 
+      
+Equations Rename : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
+    (forall τ : type Δ, Has τ Γ₁ -> Has τ Γ₂) ->
+    forall {τ : type Δ}, Γ₁ ⊢ τ -> Γ₂ ⊢ τ :=
+  Rename ρ (Id _ _ has) := Id _ _ (ρ _ has);
+  Rename ρ (λ σ ⇒ t)%term := (λ σ ⇒ Rename (ext' ρ σ) t)%term;
+  Rename ρ (t₁ ⋅ t₂)%term := (Rename ρ t₁ ⋅ Rename ρ t₂)%term;
+  Rename ρ (Λ t)%term     := (Λ Rename _ t)%term;
+  Rename ρ (t ⦗ τ ⦘)%term := ((Rename ρ t) ⦗ τ ⦘)%term.
