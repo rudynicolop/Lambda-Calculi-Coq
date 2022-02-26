@@ -3,6 +3,10 @@ From Equations Require Export Equations.
 
 (** * System F *)
 
+Equations len {A : Set} : list A -> nat :=
+| []    => 0
+| _ :: l => S (len l).
+
 Reserved Notation "x '≤' y" (at level 80, no associativity).
 
 Inductive LE (n : nat) : nat -> Set :=
@@ -19,6 +23,16 @@ Equations S_LE : forall {n m}, n ≤ m -> S n ≤ S m :=
   S_LE (LE_n n) := LE_n (S n);
   S_LE (LE_S _ _ hnm) := LE_S _ _ (S_LE hnm).
 
+Equations LE_0_l : forall n : nat, 0 ≤ n :=
+  LE_0_l 0     := LE_n _;
+  LE_0_l (S n) := LE_S _ _ (LE_0_l n).
+
+Definition bruh (n m : nat) (ρ : forall r, r ≤ m -> r ≤ n) : m ≤ n := ρ m (LE_n m).
+
+Equations S_impl_LE : forall {n m}, S n ≤ S m -> n ≤ m :=
+  S_impl_LE (LE_n (S n)) := LE_n n;
+  S_impl_LE (LE_S n (S m) h) := LE_S _ _ (S_impl_LE h).
+
 Equations ext_LE : forall {Δ₁ Δ₂ : nat},
     (forall n, n ≤ Δ₁ -> n ≤ Δ₂) -> forall {n : nat}, n ≤ S Δ₁ -> n ≤ S Δ₂ :=
   ext_LE ρ (LE_n _)     := S_LE (ρ _ (LE_n _));
@@ -34,13 +48,9 @@ Equations LT_LE : forall {n m : nat}, n `< m -> n ≤ m :=
   LT_LE (LE_n _)     := LE_S _ _ (LE_n _);
   LT_LE (LE_S _ _ h) := LE_S _ _ (LT_LE h).
 
-Equations LE_0_l : forall n : nat, 0 ≤ n :=
-  LE_0_l 0     := LE_n _;
-  LE_0_l (S n) := LE_S _ _ (LE_0_l n).
-
 Definition LT_0_l (n : nat) : 0 `< S n := S_LE (LE_0_l n).
 
-Definition bruh (n m : nat) (ρ : forall r, r ≤ m -> r ≤ n) : m ≤ n := ρ m (LE_n m).
+Definition S_impl_LT {n m : nat} : S n `< S m -> n `< m := S_impl_LE.
 
 Equations bruh' : forall (m n : nat), (forall r, r `< m -> r `< n) -> m ≤ n :=
   bruh' 0     n _ := LE_0_l n;
@@ -141,3 +151,62 @@ where "Γ '⊢' τ" := (term Γ τ).
 
 Derive Signature for term.
 Equations Derive NoConfusion (* NoConfusionHom *) (*Subterm*) for term.
+
+Definition lookup : forall {Δ : nat} {Γ : list (type Δ)} {n : nat},
+    n `< len Γ -> type Δ.
+Proof.
+  intros Δ Γ.
+  induction Γ as [| τ Γ ih]; cbn; intros [| n] hn.
+  - inv hn.
+  - inv hn.
+  - unfold "`<" in *.
+    depelim hn.
+    + apply τ.
+    + rewrite len_equation_2 in H.
+      injection H as h'. rewrite <- h' in hn.
+      eapply ih,hn.
+  - unfold "`<" in *.
+    eapply ih,S_impl_LE,hn.
+Defined.
+
+Local Transparent len.
+
+Equations lookup' :
+  forall {Δ : nat} {Γ : list (type Δ)} {n : nat}, n `< len Γ -> type Δ :=
+  lookup' (Γ:=τ :: _) (LE_n 1) := τ;
+  lookup' (Γ:=_ :: Γ') (LE_S (S _) _ h) := lookup' (Γ:=Γ') h.
+
+Local Opaque len.
+
+Definition count :
+  forall {Δ : nat} {Γ : list (type Δ)} {n : nat}
+    (h : n `< len Γ), Has (lookup' h) Γ.
+Proof.
+  intros Δ Γ n h.
+  funelim (lookup' h).
+  - left. rewrite lookup'_equation_2. reflexivity.
+  - right. (*Search (lookup' (LE_S (S _) (len _) _)).*)
+    rewrite lookup'_equation_3. apply H.
+Defined.
+
+Declare Scope term_scope.
+Delimit Scope term_scope with term.
+
+Notation "'`λ' t"
+  := (Abs _ _ _ t)
+       (at level 41, right associativity) : term_scope.
+Notation "'λ' τ '⇒' t"
+  := (Abs _ τ _ t)
+       (at level 41, right associativity) : term_scope.
+Notation "'λ' τ '↣' .. '↣' ρ '⇒' t"
+  := (Abs _ τ _ .. (Abs _ ρ _ t) ..)
+       (at level 41, right associativity) : term_scope.
+Notation "x '⋅' y"
+  := (App _ _ _ x y)
+       (at level 40, left associativity) : term_scope.
+Notation "'Λ' x"
+  := (TypAbs _ _ x)
+       (at level 43, right associativity) : term_scope.
+Notation "t '⦗' τ '⦘'"
+  := (TypApp _ _ τ t)
+       (at level 39, left associativity) : term_scope.
