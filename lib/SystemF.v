@@ -6,6 +6,52 @@ Module FIN.
 
   Derive Signature for t.
   Equations Derive NoConfusion NoConfusionHom Subterm for t.
+  Search (t ?n -> nat).
+
+  Equations nat_of {n : nat} : t n -> nat :=
+  | F1 := 0
+  | FS f := S (nat_of f).
+
+  Lemma nat_of_inj : forall (k : nat) (m n : t k),
+      nat_of m = nat_of n -> m = n.
+    intros k m; funelim (nat_of m);
+      intros n h; funelim (nat_of n);
+      cbn in *; try reflexivity.
+    - rewrite nat_of_equation_1,nat_of_equation_2 in h.
+      discriminate.
+    - rewrite nat_of_equation_1,nat_of_equation_2 in h.
+      discriminate.
+    - do 2 rewrite nat_of_equation_2 in h.
+      injection h as h'.
+      apply H0 in h'; subst; reflexivity.
+  Defined.
+
+  Reserved Infix "≤" (at level 80, no associativity).
+  
+  (*Inductive LE : forall {k : nat}, t k -> t k -> Set :=
+  | LE_F1 n : 
+  where "x ≤ y" := (LE x y) : type_scope.*)
+  
+  Definition LT {k : nat} (m n : t k) : Prop :=
+    nat_of m < nat_of n.
+
+  Definition LT_eq_LT_dec {k : nat} (m n : t k)
+    : {LT m n} + {m = n} + {LT n m} :=
+    match lt_eq_lt_dec (nat_of m) (nat_of n) with
+    | inleft (left h) => inleft (left h)
+    | inleft (right h) => inleft (right (nat_of_inj _ _ _ h))
+    | inright h => inright h
+    end.
+
+  (** [pred] of [m] . *)
+  Equations PRED : forall {k : nat} {m n : t (S k)}, LT n m -> t k :=
+    PRED (m := FS f) _ := f;
+    PRED (k:=k) (m := F1) h := _.
+  Next Obligation.
+    unfold LT in h.
+    rewrite nat_of_equation_1 in h.
+    apply Nat.nlt_0_r in h. contradiction.
+  Defined.
 End FIN.
 
 (** * System F *)
@@ -165,6 +211,18 @@ Proof.
       admit.
     + rewrite sub_type_helper_equation_2. reflexivity.
 Abort.
+
+(*Search (forall (n m : nat), n < m -> Fin.t m).*)
+Search (Fin.t ?n -> Fin.t ?n -> Prop).
+Check FIN.NoConfusionHom_t.
+
+Fail Equations sub' {Δ : nat} : Fin.t (S Δ) -> type (S Δ) -> type Δ -> type Δ :=
+  sub' n (TId m) τ with FIN.LT_eq_LT_dec n m => {
+    | inleft (left  h) (** [n < m] *) := FIN.PRED h; (* TId m, m downshifted *)
+    | inleft (right _) (** [n = m] *) := τ;
+    | inright h        (** [n > m] *) := TId m }; (* TId m, exact *)
+  sub' n (∀ τ')%ty τ    := (∀ sub' (Fin.FS n) τ' (S_type τ))%ty;
+  sub' n (τ₁ → τ₂)%ty τ := (sub' n τ₁ τ → sub' n τ₂ τ)%ty.
 
 Definition sub_type {Δ : nat} (body : type (S Δ)) (arg : type Δ) : type Δ :=
   subs_type (sub_type_helper arg) body.
