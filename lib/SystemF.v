@@ -30,10 +30,74 @@ Notation "'∀' x"
 Notation "x → y"
   := (TArrow x y) (at level 19, right associativity) : ty_scope.
 
+Equations upshift_type : forall {Δ : nat} (n : nat), type Δ -> type (n + Δ) :=
+  upshift_type n (TId m) := Fin.R n m;
+  upshift_type n (∀ τ)%ty := (∀ eq_rect _ _ (upshift_type n τ)%ty _ _)%ty;
+  upshift_type n (τ₁ → τ₂)%ty := (upshift_type n τ₁ → upshift_type n τ₂)%ty.
+
+Notation "'↑'" := upshift_type (at level 0, no associativity) : ty_scope.
+
 Equations S_type : forall {Δ : nat}, type Δ -> type (S Δ) :=
   S_type (TId n)      := Fin.FS n;
   S_type (∀ τ)%ty     := (∀ S_type τ)%ty;
   S_type (τ₁ → τ₂)%ty := (S_type τ₁ → S_type τ₂)%ty.
+
+Equations mapply : forall {F : nat -> Set} (m : nat),
+    (forall {n : nat}, F n -> F (S n)) -> forall {n : nat}, F n -> F (m + n) :=
+  mapply 0 f a := a;
+  mapply (S n) f a := f _ (mapply n f a).
+
+Notation "f '`^' m" := (mapply m f) (at level 10, left associativity).
+
+Lemma mapply_R : forall (n m : nat) (f : Fin.t n),
+    Fin.R m f = @Fin.FS `^ m f.
+Proof.
+  intros n m.
+  generalize dependent n.
+  induction m as [| m ih]; intros n f; simpl.
+  - rewrite mapply_equation_1. reflexivity.
+  - rewrite mapply_equation_2, ih. reflexivity.
+Defined.
+
+Lemma upshift_type_0 : forall {Δ : nat} (τ : type Δ), ↑%ty 0 τ = τ.
+Proof.
+  intros Δ τ. funelim (↑%ty 0 τ).
+  - rewrite upshift_type_equation_1. reflexivity.
+  - rewrite upshift_type_equation_2; cbn.
+    unfold upshift_type_obligations_obligation_1, eq_sym.
+    pose proof Peano_dec.UIP_nat _ _ (plus_n_Sm 0 Δ) as h.
+    cbn in h; specialize h with eq_refl.
+    rewrite h, H; clear h H. reflexivity.
+  - rewrite upshift_type_equation_3, H, H0. reflexivity.
+Defined.
+
+Lemma upshift_type_S_type : forall {Δ : nat} (n : nat) (τ : type Δ),
+    (↑ n τ)%ty = @S_type `^ n τ.
+Proof.
+  intros Δ n τ. funelim (↑%ty n τ).
+  - rewrite upshift_type_equation_1,mapply_R.
+    funelim (@Fin.FS `^ n m).
+    + do 2 rewrite mapply_equation_1; reflexivity.
+    + do 2 rewrite mapply_equation_2.
+      rewrite <- H. reflexivity.
+  - rewrite upshift_type_equation_2, H; clear H.
+    unfold upshift_type_obligations_obligation_1.
+    funelim (@S_type `^ n τ).
+    + do 2 rewrite mapply_equation_1.
+      unfold eq_sym.
+      pose proof Peano_dec.UIP_nat _ _ (plus_n_Sm 0 Δ) as h.
+      cbn in h; specialize h with eq_refl.
+      rewrite h. reflexivity.
+    + do 2 rewrite mapply_equation_2.
+      rewrite <- H, S_type_equation_2; f_equal.
+      rewrite <- map_subst_map.
+      f_equal; apply Peano_dec.UIP_nat.
+  - rewrite upshift_type_equation_3, H, H0; clear H H0.
+    funelim (@S_type `^ n (τ₁ → τ₂)%ty).
+    + do 3 rewrite mapply_equation_1. reflexivity.
+    + do 3 rewrite mapply_equation_2.
+      rewrite <- H. reflexivity.
+Defined.
 
 Equations type_eq_dec : forall {Δ : nat} (τ ρ : type Δ), {τ = ρ} + {τ <> ρ} :=
   type_eq_dec (TId n) (TId m) with Fin.eq_dec n m => {
@@ -187,12 +251,22 @@ Equations S_term : forall {Δ : nat} {Γ : list (type Δ)} {τ : type Δ},
   S_term (`λ t)%term    := (`λ S_term t)%term;
   S_term (t₁ ⋅ t₂)%term := (S_term t₁ ⋅ S_term t₂)%term;
   S_term (Λ t)%term     := (Λ S_term t)%term;
-  S_term (t ⦗ τ ⦘)%term := _.
+  S_term (Δ:=Δ) (Γ:=Γ) (t ⦗ τ' ⦘)%term
+  := eq_rect _ _ (S_term t ⦗ S_type τ' ⦘)%term _ _.
 Next Obligation.
-  pose proof S_term _ _ _ t as St.
-  rewrite S_type_equation_2 in St.
-  pose proof (St ⦗ S_type τ ⦘)%term as t'.
-  admit. (* problem :(. *)
+  unfold "_ `[[ _ ]]".
+  rewrite S_type_subs.
+  clear S_term t. rename τ4 into τ.
+  funelim (S_type τ).
+  - rewrite S_type_equation_1.
+    do 2 rewrite subs_type_equation_1.
+    rewrite exts_type_equation_2.
+    rewrite sub_type_helper_equation_2.
+    funelim (sub_type_helper τ' n).
+    + rewrite sub_type_helper_equation_1.
+      admit. (* problem :(. *)
+    + rewrite sub_type_helper_equation_2. reflexivity.
+  - 
 Abort.
 
 Definition map_has : forall (A B : Set) (f : A -> B) (l : list A) b,
@@ -241,7 +315,7 @@ Definition S_subs : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
 Proof.
   intros Δ Γ₁ Γ₂ σ τ h.
   apply map_has in h as [τ' ? h]; subst.
-  apply σ in h.
+  apply σ in h; clear σ Γ₁.
   (*apply S_term, h.*)
 Admitted.
 
