@@ -73,7 +73,7 @@ Delimit Scope ty_scope with ty.
 Coercion TId : Fin.t >-> type.
 Notation "'∀' x"
   := (TForall x) (at level 20, right associativity) : ty_scope.
-Notation "x → y"
+Notation "x '→' y"
   := (TArrow x y) (at level 19, right associativity) : ty_scope.
 
 Equations upshift_type : forall {Δ : nat} (n : nat), type Δ -> type (n + Δ) :=
@@ -159,10 +159,38 @@ Equations type_eq_dec : forall {Δ : nat} (τ ρ : type Δ), {τ = ρ} + {τ <> 
       | left _     => left _ } };
   type_eq_dec _ _ := right _.
 
+Equations ext_type : forall {Δ₁ Δ₂ : nat},
+    (Fin.t Δ₁ -> Fin.t Δ₂) -> Fin.t (S Δ₁) -> Fin.t (S Δ₂) :=
+  ext_type _  Fin.F1    := Fin.F1;
+  ext_type ρ (Fin.FS n) := Fin.FS (ρ n).
+
+Equations rename_type : forall {Δ₁ Δ₂ : nat},
+    (Fin.t Δ₁ -> Fin.t Δ₂) -> type Δ₁ -> type Δ₂ :=
+  rename_type ρ (TId n) := ρ n;
+  rename_type ρ (∀ τ)%ty := (∀ rename_type (ext_type ρ) τ)%ty;
+  rename_type ρ (τ → τ')%ty := (rename_type ρ τ → rename_type ρ τ')%ty.
+
 Equations exts_type : forall {Δ₁ Δ₂ : nat},
     (Fin.t Δ₁ -> type Δ₂) -> Fin.t (S Δ₁) -> type (S Δ₂) :=
   exts_type σ Fin.F1     := Fin.F1;
-  exts_type σ (Fin.FS n) := S_type (σ n).
+  exts_type σ (Fin.FS n) := rename_type Fin.FS (σ n).
+
+Lemma rename_type_useless : forall (Δ : nat) (τ : type Δ),
+    rename_type Fin.FS τ = S_type τ.
+Proof.
+  intros Δ τ. funelim (S_type τ).
+  - rewrite rename_type_equation_1,S_type_equation_1.
+    reflexivity.
+  - rewrite rename_type_equation_2,S_type_equation_2,<- H.
+    f_equal.
+    clear H.
+    funelim (rename_type Fin.FS τ).
+    + do 2 rewrite rename_type_equation_1.
+      funelim (ext_type Fin.FS n).
+      * rewrite ext_type_equation_1.
+        admit. (** yes!! I was doing something wrong! *)
+      * rewrite ext_type_equation_2. reflexivity.
+Abort.
 
 Equations subs_type : forall {Δ₁ Δ₂ : nat},
     (Fin.t Δ₁ -> type Δ₂) -> type Δ₁ -> type Δ₂ :=
@@ -179,7 +207,8 @@ Proof.
   - rewrite S_type_equation_1.
     do 2 rewrite subs_type_equation_1.
     rewrite exts_type_equation_2.
-    reflexivity.
+    admit. (** Only works if [rename_type_useless]
+               is true, but it appears false!. *)
   - rewrite S_type_equation_2.
     do 2 rewrite subs_type_equation_2.
     rewrite S_type_equation_2,H. reflexivity.
@@ -187,7 +216,7 @@ Proof.
     do 2 rewrite subs_type_equation_3.
     rewrite S_type_equation_3,H,H0.
     reflexivity.
-Defined.
+Abort.
 
 Equations sub_type_helper : forall {Δ : nat}, type Δ -> Fin.t (S Δ) -> type Δ :=
   sub_type_helper τ Fin.F1     := τ;
@@ -211,10 +240,6 @@ Proof.
       admit.
     + rewrite sub_type_helper_equation_2. reflexivity.
 Abort.
-
-(*Search (forall (n m : nat), n < m -> Fin.t m).*)
-Search (Fin.t ?n -> Fin.t ?n -> Prop).
-Check FIN.NoConfusionHom_t.
 
 Fail Equations sub' {Δ : nat} : Fin.t (S Δ) -> type (S Δ) -> type Δ -> type Δ :=
   sub' n (TId m) τ with FIN.LT_eq_LT_dec n m => {
@@ -303,9 +328,22 @@ Proof.
     + right; apply ih,H.
 Defined.
 
-(*Definition helpme : forall {Δ : nat} (τ : type (S Δ)) (τ' : type Δ),
-    (subs_type (sub_type_helper (S_type τ')) (S_type τ) ->
-    subs_type (exts_type (sub_type_helper τ')) (S_type τ) -> True.*)
+Definition helpme : forall {Δ : nat} (τ : type (S Δ)) (τ' : type Δ),
+    {S_τ' : type (S Δ) | (S_type τ `[[ S_τ']])%ty = S_type (τ `[[ τ']])%ty}.
+Proof.
+  intros Δ τ τ'.
+  unfold "_ `[[ _ ]]".
+  Fail rewrite S_type_subs. (*
+  funelim (S_type τ).
+  - rewrite S_type_equation_1.
+    rewrite subs_type_equation_1.
+    rewrite exts_type_equation_2.
+    funelim (sub_type_helper τ' n).
+    + rewrite sub_type_helper_equation_1.
+      exists (S_type τ).
+      rewrite subs_type_equation_1.
+      rewrite sub_type_helper_equation_2. *)
+Abort.
 
 Equations S_term : forall {Δ : nat} {Γ : list (type Δ)} {τ : type Δ},
     Γ ⊢ τ -> map S_type Γ ⊢ S_type τ :=
@@ -316,19 +354,19 @@ Equations S_term : forall {Δ : nat} {Γ : list (type Δ)} {τ : type Δ},
   S_term (Δ:=Δ) (Γ:=Γ) (t ⦗ τ' ⦘)%term
   := _. (*eq_rect _ _ (S_term t ⦗ S_type τ' ⦘)%term _ _.*)
 Next Obligation.
+Proof.
+  rename τ4 into τ.
   pose proof (S_term _ _ _ t) as S_t.
   rewrite S_type_equation_2 in S_t.
-  unfold "_ `[[ _ ]]".
-  rewrite S_type_subs.
-  pose proof TypApp (map S_type Γ) (S_type τ4) as S_t'.
-  unfold "_ `[[ _ ]]" in S_t'.
-  enough (h : {S_τ' : type (S Δ)
-              | subs_type (sub_type_helper S_τ') (S_type τ4) =
-                  subs_type (exts_type (sub_type_helper τ')) (S_type τ4)}).
-  - destruct h as [S_τ' h].
-    specialize S_t' with S_τ'.
-    rewrite h in S_t'. exact (S_t' S_t).
-  - (* TODO: Maybe provable? *)
+  pose proof TypApp (map S_type Γ) as S_t'.
+  specialize S_t' with (τ' := S_type τ').
+  enough (h : {S_τ : type (S (S Δ))
+              | (S_τ `[[ S_type τ' ]])%ty = S_type (τ `[[ τ' ]])%ty }).
+  - destruct h as [S_τ h].
+    specialize S_t' with (τ:=S_τ).
+    admit. (*pose proof S_t' S_τ. as S_t as t'.
+             rewrite h in t'. exact t'. *)
+  - (* TODO: Maybe provable? *) 
 Abort.
 
 Definition map_has : forall (A B : Set) (f : A -> B) (l : list A) b,
