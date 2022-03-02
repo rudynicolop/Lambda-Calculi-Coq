@@ -138,7 +138,6 @@ where "Γ '⊢' τ" := (term Γ τ).
 
 Derive Signature for term.
 Equations Derive NoConfusion (* NoConfusionHom *) (*Subterm*) for term.
-(*Equations Derive Subterm for term.*)
 
 Declare Scope term_scope.
 Delimit Scope term_scope with term.
@@ -350,10 +349,74 @@ Proof.
   rewrite wah; reflexivity.
 Defined.
 
+(* Lemma halp :,
+        subs_type σ (rename_type ρ τ) =
+          rename_type ρ (subs_type σ τ).*)
+
+Search ((Fin.t _ -> type _) -> Fin.t -> type _).
+
+Definition rename_suber : forall {Δ₁ Δ₂ Δ₃ : nat},
+    (Fin.t Δ₂ -> Fin.t Δ₃) -> (Fin.t Δ₁ -> type Δ₂) -> Fin.t Δ₂ -> type Δ₃.
+Proof.
+  intros Δ₁ Δ₂ Δ₃ ρ σ fn.
+  pose proof rename_type ρ as rt.
+Abort.
+
+(*Search ((Fin.t ?a -> Fin.t ?b) -> Fin.t ?c -> Fin.t ?d).*)
+
+Definition halp : forall {Δ₁ Δ₂ Δ₃ : nat},
+    (Fin.t Δ₂ -> Fin.t Δ₃) -> Fin.t Δ₁ -> Fin.t Δ₂.
+Proof.
+  intros Δ₁ Δ₂ Δ₃ ρ X.
+  Check ext_type.
+  Check rename_type Fin.FS.
+Abort.
+  
+(** [rename_type ρ τ : type (n + Δ)] uses
+    [ρ : fin Δ -> fin (n + Δ)]
+    to "increment" [τ : type Δ].
+    [subs_type σ τ : type Δ] uses
+    [σ : fin (m + Δ) -> type Δ]
+    to "decrement" [τ : type (m + Δ)] *)
+
+Section Expriment.
+  Variables Δ n m : nat.
+  Variable τ : type (m + Δ).
+  Variable ρ : Fin.t Δ -> Fin.t (n + Δ).
+  Variable σ : Fin.t (m + Δ) -> type Δ.
+  
+  Check subs_type σ τ : type Δ.
+  Check rename_type ρ (subs_type σ τ) : type (n + Δ).
+  Variable f : (Fin.t Δ -> Fin.t (n + Δ)) -> Fin.t (m + Δ) -> Fin.t (m + n + Δ).
+  Variable g : (Fin.t (m + Δ) -> type Δ) -> Fin.t (m + n + Δ) -> Fin.t (n + Δ).
+  Check subs_type (g σ) (rename_type (f ρ) τ) : type (n + Δ).
+End Expriment.
+
+Section Experiment2.
+  Variables Δ₁ Δ₂ m : nat.
+  Variable τ : type (m + Δ₁).
+  Variable ρ : Fin.t Δ₁ -> Fin.t Δ₂.
+  Variable σ : Fin.t (m + Δ₁) -> type Δ₁.
+  
+  Check subs_type σ τ : type Δ₁.
+  Check rename_type ρ (subs_type σ τ) : type Δ₂.
+  Variable f : (Fin.t Δ₁ -> Fin.t Δ₂) -> Fin.t (m + Δ₁) -> Fin.t (m + Δ₂).
+  Variable g : (Fin.t (m + Δ₁) -> type Δ₁) -> Fin.t (m + Δ₂) -> Fin.t Δ₂.
+  Check subs_type (g σ) (rename_type (f ρ) τ) : type Δ₂.
+End Experiment2.
+  
 Fail Lemma fudge
-  : forall (Δ₁ Δ₂ : nat) (σ : Fin.t Δ₁ -> type Δ₂) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type Δ₁),
-    subs_type σ (rename_type ρ τ)
-    = rename_type ρ (subs_type σ τ).
+  : forall (Δ₁ Δ₂ Δ₃ : nat)
+      (σ : Fin.t Δ₁ -> type Δ₂)
+      (ρ : Fin.t Δ₂ -> Fin.t Δ₃) (τ : type Δ₁),
+    rename_type ρ (subs_type σ τ) = subs_type _ (rename_type (Δ₁:=Δ₁) (Δ₂:=Δ₂) ρ τ).
+(*
+Proof.
+  intros Δ₁ Δ₂ Δ₃ σ ρ τ.
+  funelim (subs_type (σ Δ₁ Δ₂) τ).
+  - rewrite rename_type_equation_1.
+    do 2 rewrite subs_type_equation_1.
+    rewrite *)
 
 Lemma annoyed :
   forall (Δ₁ Δ₂ : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type (S Δ₁)) (τ' : type Δ₁),
@@ -366,6 +429,11 @@ Proof.
   Check rename_type.
   Print exts_type.
   Check @subs_type.*)
+  Set Printing Implicit.
+  Check rename_type.
+  Check subs_type.
+  Check @rename_type Δ₁ Δ₂ ρ (@subs_type (S Δ₁) Δ₁ (@sub_type_helper Δ₁ τ') τ).
+  (*subs_type σ (rename_type ρ τ) = rename_type ρ (subs_type σ τ)*)
   funelim (rename_type (ext_type ρ) τ).
   - rewrite rename_type_equation_1.
     do 2 rewrite subs_type_equation_1.
