@@ -6,7 +6,6 @@ Module FIN.
 
   Derive Signature for t.
   Equations Derive NoConfusion NoConfusionHom Subterm for t.
-  Search (t ?n -> nat).
 
   Equations nat_of {n : nat} : t n -> nat :=
   | F1 := 0
@@ -215,13 +214,207 @@ Proof.
     intros α has; cbn; right; exact has.
 Defined.
 
-Definition Rename_type :
-    forall {Δ₁ Δ₂ : nat} {Γ : list (type Δ₁)}
-      (ρ : Fin.t Δ₁ -> Fin.t Δ₂) {τ : type Δ₁},
-      Γ ⊢ τ -> map (rename_type ρ) Γ ⊢ rename_type ρ τ.
+Lemma rename_type_comm :
+  forall {Δ₁ Δ₂ Δ₃ : nat} (τ : type Δ₁)
+    (f g : forall {Δ₁ Δ₂}, Fin.t Δ₁ -> Fin.t Δ₂),
+    (forall (Δ₁ Δ₂ Δ₃ : nat) (n : Fin.t Δ₁),
+        @f Δ₂ Δ₃ (g n) = @g Δ₂ Δ₃ (f n)) ->
+    rename_type (Δ₁:=Δ₂) (Δ₂:=Δ₃) f ((rename_type g) τ) =
+      rename_type (Δ₁:=Δ₂) (Δ₂:=Δ₃) g ((rename_type f) τ).
 Proof.
-  (* TODO! *)
+  intros Δ₁ Δ₂ Δ₃ τ f g hfg.
+  funelim (rename_type (g Δ₁ Δ₂) τ).
+  - do 4 rewrite rename_type_equation_1.
+    rewrite hfg; reflexivity.
+  - do 4 rewrite rename_type_equation_2. f_equal.
+    (*Check ext_type (f Δ₂ Δ₃).
+    Check fun Δ₁ Δ₂ => ext_type (f Δ₁ Δ₂).*)
+    (*specialize H with (Δ₁:= S Δ₁) (Δ₂:=S Δ₂) (Δ₃:=S Δ₃).
+    specialize H with
+      (f:= fun Δ₁ Δ₂ => ext_type (f Δ₁ Δ₂)).
+    enough (eqf23: ext_type (f Δ₂ Δ₃) = (fun Δ₂ Δ₃ => ext_type (f Δ₂ Δ₃)) Δ₂ Δ₃).
+    rewrite eqf23.
+    replace () with ().
+  - do 4 rewrite rename_type_equation_3.
+      rewrite H, H0. reflexivity.*)
 Admitted.
+
+Lemma popit : forall {Δ₁ Δ₂ : nat} (τ : type Δ₁) (f : forall {Δ₁ Δ₂ : nat}, Fin.t Δ₁ -> Fin.t Δ₂),
+    (forall {Δ₁ Δ₂ : nat} (n : Fin.t Δ₁), Fin.FS (@f Δ₁ Δ₂ n) = f (Fin.FS n)) ->
+    rename_type Fin.FS (rename_type (@f Δ₁ Δ₂) τ) =
+      rename_type f (rename_type Fin.FS τ).
+Proof.
+  intros Δ₁ Δ₂ τ f hf.
+  funelim (rename_type (f Δ₁ Δ₂) τ).
+  - do 4 rewrite rename_type_equation_1.
+    rewrite hf; reflexivity.
+  - do 4 rewrite rename_type_equation_2; f_equal.
+Abort.
+
+Lemma sad :
+  forall (Δ₁ Δ₂ : nat) (f : Fin.t Δ₁ -> Fin.t Δ₂)
+    (g : forall {Δ}, Fin.t Δ -> Fin.t (S Δ)) (τ : type Δ₁),
+    rename_type (ext_type f) (rename_type g τ) =
+      rename_type g (rename_type f τ).
+Proof.
+  intros Δ₁ Δ₂ f g τ.
+  funelim (rename_type f τ).
+  - do 4 rewrite rename_type_equation_1.
+    admit.
+  - do 4 rewrite rename_type_equation_2.
+Abort.
+
+Equations ext_types : forall {Δ₁ Δ₂ : nat} (n : nat),
+    (Fin.t Δ₁ -> Fin.t Δ₂) -> Fin.t (n + Δ₁) -> Fin.t (n + Δ₂) :=
+  ext_types 0 ρ := ρ;
+  ext_types (S n) ρ := ext_type (ext_types n ρ).
+
+(* Search (forall n m : nat, S n + m = n + S m). *)
+
+Lemma super_sad : forall (Δ₁ Δ₂ n : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type (n + Δ₁)),
+    rename_type
+      (ext_types (S n) ρ)
+      (eq_rect
+         _ _
+         (rename_type (ext_types n Fin.FS) τ)
+         _ (eq_sym (Plus.plus_Snm_nSm n Δ₁)))
+    = eq_rect
+        _ _
+        (rename_type
+           (ext_types n Fin.FS)
+           (rename_type (ext_types n ρ) τ))
+        _ (eq_sym (Plus.plus_Snm_nSm n Δ₂)).
+Proof.
+  intros Δ₁ Δ₂ n ρ τ.
+  funelim (rename_type (ext_types n Fin.FS) τ).
+  - do 3 rewrite rename_type_equation_1.
+    (*Check Eqdep_dec.eq_rect_eq_dec.*)
+    Fail rewrite <- Eqdep_dec.eq_rect_eq_dec.
+    (*Search (?f (eq_rect _ _ _ _ _)).*)
+    Fail rewrite <- map_subst_map.
+    (*Check map_subst.*)
+    do 2 rewrite map_subst.
+    rewrite rename_type_equation_1.
+    admit.
+  - do 3 rewrite rename_type_equation_2.
+    (*Search (eq_rect _ _ (?f _)).*)
+    do 2 rewrite map_subst.
+    rewrite rename_type_equation_2; f_equal.
+    specialize H with (n:=S n).
+    pose proof ext_types_equation_2 as ets2.
+    specialize ets2 with (n :=S n) (ρ:=ρ0).
+    rewrite <- ets2.
+    Fail rewrite <- H.
+Abort.
+
+Fail Lemma super_sad : forall (Δ₁ Δ₂ n : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type (n + Δ₁)),
+    rename_type
+      (ext_types (S n) ρ)
+      (eq_rect
+         _ (fun Δ => type (n + Δ))
+         (rename_type (ext_types n Fin.FS) τ)
+         (S Δ₁) _)
+    = rename_type
+        (ext_types n Fin.FS)
+        (rename_type (ext_types n ρ) τ).
+
+Lemma wah : forall (Δ₁ Δ₂ : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type Δ₁),
+    rename_type (ext_type ρ) (rename_type Fin.FS τ) =
+      rename_type Fin.FS (rename_type ρ τ).
+Proof.
+  intros Δ₁ Δ₂ ρ τ.
+  (*Check ext_type ρ.*)
+  funelim (rename_type Fin.FS τ).
+  - do 4 rewrite rename_type_equation_1.
+    rewrite ext_type_equation_2. reflexivity.
+  - do 4 rewrite rename_type_equation_2; f_equal.
+    (*Check ext_type.*)
+    
+(*  funelim (rename_type ρ τ).
+  - do 4 rewrite rename_type_equation_1.
+    rewrite ext_type_equation_2. reflexivity.
+  - do 4 rewrite rename_type_equation_2; f_equal.
+    Check (ext_type Fin.FS).
+    admit (* why? *).
+  - do 4 rewrite rename_type_equation_3.
+    rewrite H,H0. reflexivity.*)
+Admitted.
+
+Lemma map_rename_type_ext_type_FS :
+  forall (Δ₁ Δ₂ : nat) (Γ : list (type Δ₁)) (ρ : Fin.t Δ₁ -> Fin.t Δ₂),
+    map (rename_type (ext_type ρ)) (map (rename_type Fin.FS) Γ) =
+      map (rename_type Fin.FS) (map (rename_type ρ) Γ).
+Proof.
+  intros Δ₁ Δ₂ Γ ρ.
+  induction Γ as [| τ Γ ih]; cbn; f_equal; auto.
+  rewrite wah; reflexivity.
+Defined.
+
+Fail Lemma fudge
+  : forall (Δ₁ Δ₂ : nat) (σ : Fin.t Δ₁ -> type Δ₂) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type Δ₁),
+    subs_type σ (rename_type ρ τ)
+    = rename_type ρ (subs_type σ τ).
+
+Lemma annoyed :
+  forall (Δ₁ Δ₂ : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type (S Δ₁)) (τ' : type Δ₁),
+    (rename_type (ext_type ρ) τ `[[ rename_type ρ τ']])%ty
+    = rename_type ρ (τ `[[ τ']])%ty.
+Proof.
+  intros Δ₁ Δ₂ ρ τ τ'.
+  unfold "_ `[[ _ ]]".
+  (*Check (exts_type,rename_type).
+  Check rename_type.
+  Print exts_type.
+  Check @subs_type.*)
+  funelim (rename_type (ext_type ρ) τ).
+  - rewrite rename_type_equation_1.
+    do 2 rewrite subs_type_equation_1.
+    funelim (ext_type ρ0 n).
+    + rewrite ext_type_equation_1.
+      do 2 rewrite sub_type_helper_equation_1. reflexivity.
+    + rewrite ext_type_equation_2.
+      do 2 rewrite sub_type_helper_equation_2.
+      rewrite rename_type_equation_1. reflexivity.
+  - rewrite rename_type_equation_2.
+    do 2 rewrite subs_type_equation_2.
+    rewrite rename_type_equation_2.
+    f_equal.
+Admitted.
+
+Equations Rename_type :
+  forall {Δ₁ Δ₂ : nat} {Γ : list (type Δ₁)}
+    (ρ : Fin.t Δ₁ -> Fin.t Δ₂) {τ : type Δ₁},
+    Γ ⊢ τ -> map (rename_type ρ) Γ ⊢ rename_type ρ τ :=
+  Rename_type ρ (Id _ _ h) := Id _ _ (has_map (rename_type ρ) h);
+  Rename_type ρ (`λ t)%term := (`λ Rename_type ρ t)%term;
+  Rename_type ρ (t ⋅ t')%term := (Rename_type ρ t ⋅ Rename_type ρ t')%term;
+  Rename_type (Δ₁:=Δ₁) (Δ₂:=Δ₂) (Γ:=Γ) ρ (TypAbs _ τ t) :=
+    (** [TypAbs _ (rename_type (ext_type ρ) τ) (Rename_type (ext_type ρ) t)]
+        The term "Rename_type (S Δ₁) (S Δ₂) (map (rename_type Fin.FS) Γ) (ext_type ρ) τ t" has type
+        "map (rename_type (ext_type ρ)) (map (rename_type Fin.FS) Γ) ⊢ rename_type (ext_type ρ) τ"
+        while it is expected to have type "map (rename_type Fin.FS) ?Γ ⊢ rename_type (ext_type ρ) τ". *)
+    (** [(Λ Rename_type (ext_type ρ) t)%term]
+        The term "Rename_type (S Δ₁) (S Δ₂) (map (rename_type Fin.FS) Γ) (ext_type ρ) τ t" has type
+        "map (rename_type (ext_type ρ)) (map (rename_type Fin.FS) Γ) ⊢ rename_type (ext_type ρ) τ"
+        while it is expected to have type "map (rename_type Fin.FS) ?Γ ⊢ ?τ". *)
+    (Λ eq_rect
+       (map (rename_type (ext_type ρ)) (map (rename_type Fin.FS) Γ))
+       (fun Γ => Γ ⊢ rename_type (ext_type ρ) τ)
+       (Rename_type (ext_type ρ) t)
+       (map (rename_type Fin.FS) (map (rename_type ρ) Γ)) _)%term;
+  Rename_type (Δ₁:=Δ₁) (Δ₂:=Δ₂) (Γ:=Γ) ρ (TypApp _ τ τ' t)%term :=
+    (** [(Rename_type ρ t ⦗ rename_type ρ τ' ⦘)%term]
+        The term "(Rename_type Δ₁ Δ₂ Γ ρ (∀ τ)%ty t ⦗ rename_type ρ τ' ⦘)%term" has type
+        "map (rename_type ρ) Γ
+        ⊢ @rename_type (S Δ₁) (S Δ₂) (ext_type ρ) τ `[[ rename_type ρ τ']])%ty" while it is expected to have type
+        "map (rename_type ρ) Γ ⊢ rename_type ρ (τ `[[ τ']])%ty". *)
+    eq_rect
+      (rename_type (ext_type ρ) τ `[[ rename_type ρ τ']])%ty
+      (fun τ => map (rename_type ρ) Γ ⊢ τ)
+      (Rename_type ρ t ⦗ rename_type ρ τ' ⦘)%term
+      (rename_type ρ (τ `[[ τ']])%ty) _.
+Next Obligation. apply map_rename_type_ext_type_FS. Defined.
+Next Obligation. apply annoyed. Defined.
 
 Definition exts_Rename_type : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
     (forall τ : type Δ, Has τ Γ₁ -> Γ₂ ⊢ τ) -> forall τ : type (S Δ),
