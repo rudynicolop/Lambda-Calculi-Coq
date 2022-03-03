@@ -184,7 +184,7 @@ Proof.
       exact (existT2 _ _ a' fab (inr hasa)).
 Defined.
 
-Definition S_Renamer : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
+Definition ext_Renamer : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
     (forall τ : type Δ, Has τ Γ₁ -> Has τ Γ₂) -> forall τ : type (S Δ),
       Has τ (map (rename_type Fin.FS) Γ₁) ->
       Has τ (map (rename_type Fin.FS) Γ₂).
@@ -200,7 +200,7 @@ Equations Rename : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
   Rename ρ (Id _ _ has) := Id _ _ (ρ _ has);
   Rename ρ (λ σ ⇒ t)%term := (λ σ ⇒ Rename (ext' ρ σ) t)%term;
   Rename ρ (t₁ ⋅ t₂)%term := (Rename ρ t₁ ⋅ Rename ρ t₂)%term;
-  Rename ρ (Λ t)%term     := (Λ Rename (S_Renamer ρ) t)%term;
+  Rename ρ (Λ t)%term     := (Λ Rename (ext_Renamer ρ) t)%term;
   Rename ρ (t ⦗ τ ⦘)%term := ((Rename ρ t) ⦗ τ ⦘)%term.
 
 Definition exts : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
