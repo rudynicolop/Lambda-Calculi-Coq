@@ -17,6 +17,8 @@ Many techniques & lemmas I employ are not of my own design,
 
 - [Lambda-Calculus](https://github.com/pi8027/lambda-calculus)
 
+- [PLFA](https://github.com/plfa/plfa.github.io) 
+
 For general wisdom on coq-programming I looked to:
 
 - [Software Foundations](https://softwarefoundations.cis.upenn.edu/)
