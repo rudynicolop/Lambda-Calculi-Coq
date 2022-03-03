@@ -1,4 +1,4 @@
-Require Export Lambda.StlcDep.
+Require Export Lambda.STLC.Dep.
 
 Module Examples.
   Open Scope term_scope.

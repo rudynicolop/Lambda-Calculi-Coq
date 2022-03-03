@@ -1,4 +1,4 @@
-Require Export Lambda.SimpleTypes.
+Require Export Lambda.STLC.SimpleTypes.
 
 (** Note: many of the helper lemmas
           and proof techniques

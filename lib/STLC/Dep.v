@@ -1,4 +1,4 @@
-Require Export Lambda.SimpleTypes.
+Require Export Lambda.STLC.SimpleTypes.
 From Equations Require Import Equations.
 
 (** * Simply Typed Lambda Calculus. *)
