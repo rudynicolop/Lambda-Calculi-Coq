@@ -353,7 +353,7 @@ Defined.
         subs_type σ (rename_type ρ τ) =
           rename_type ρ (subs_type σ τ).*)
 
-Search ((Fin.t _ -> type _) -> Fin.t -> type _).
+(*Search ((Fin.t _ -> type _) -> Fin.t -> type _).*)
 
 Definition rename_suber : forall {Δ₁ Δ₂ Δ₃ : nat},
     (Fin.t Δ₂ -> Fin.t Δ₃) -> (Fin.t Δ₁ -> type Δ₂) -> Fin.t Δ₂ -> type Δ₃.
@@ -368,8 +368,8 @@ Definition halp : forall {Δ₁ Δ₂ Δ₃ : nat},
     (Fin.t Δ₂ -> Fin.t Δ₃) -> Fin.t Δ₁ -> Fin.t Δ₂.
 Proof.
   intros Δ₁ Δ₂ Δ₃ ρ X.
-  Check ext_type.
-  Check rename_type Fin.FS.
+  (*Check ext_type.
+  Check rename_type Fin.FS.*)
 Abort.
   
 (** [rename_type ρ τ : type (n + Δ)] uses
@@ -385,11 +385,11 @@ Section Expriment.
   Variable ρ : Fin.t Δ -> Fin.t (n + Δ).
   Variable σ : Fin.t (m + Δ) -> type Δ.
   
-  Check subs_type σ τ : type Δ.
-  Check rename_type ρ (subs_type σ τ) : type (n + Δ).
+  (*Check subs_type σ τ : type Δ.
+  Check rename_type ρ (subs_type σ τ) : type (n + Δ).*)
   Variable f : (Fin.t Δ -> Fin.t (n + Δ)) -> Fin.t (m + Δ) -> Fin.t (m + n + Δ).
   Variable g : (Fin.t (m + Δ) -> type Δ) -> Fin.t (m + n + Δ) -> Fin.t (n + Δ).
-  Check subs_type (g σ) (rename_type (f ρ) τ) : type (n + Δ).
+  (*Check subs_type (g σ) (rename_type (f ρ) τ) : type (n + Δ).*)
 End Expriment.
 
 Section Experiment2.
@@ -398,11 +398,11 @@ Section Experiment2.
   Variable ρ : Fin.t Δ₁ -> Fin.t Δ₂.
   Variable σ : Fin.t (m + Δ₁) -> type Δ₁.
   
-  Check subs_type σ τ : type Δ₁.
-  Check rename_type ρ (subs_type σ τ) : type Δ₂.
+  (*Check subs_type σ τ : type Δ₁.
+  Check rename_type ρ (subs_type σ τ) : type Δ₂.*)
   Variable f : (Fin.t Δ₁ -> Fin.t Δ₂) -> Fin.t (m + Δ₁) -> Fin.t (m + Δ₂).
   Variable g : (Fin.t (m + Δ₁) -> type Δ₁) -> Fin.t (m + Δ₂) -> Fin.t Δ₂.
-  Check subs_type (g σ) (rename_type (f ρ) τ) : type Δ₂.
+  (*Check subs_type (g σ) (rename_type (f ρ) τ) : type Δ₂.*)
 End Experiment2.
   
 Fail Lemma fudge
@@ -430,9 +430,9 @@ Proof.
   Print exts_type.
   Check @subs_type.*)
   Set Printing Implicit.
-  Check rename_type.
+  (*Check rename_type.
   Check subs_type.
-  Check @rename_type Δ₁ Δ₂ ρ (@subs_type (S Δ₁) Δ₁ (@sub_type_helper Δ₁ τ') τ).
+  Check @rename_type Δ₁ Δ₂ ρ (@subs_type (S Δ₁) Δ₁ (@sub_type_helper Δ₁ τ') τ).*)
   (*subs_type σ (rename_type ρ τ) = rename_type ρ (subs_type σ τ)*)
   funelim (rename_type (ext_type ρ) τ).
   - rewrite rename_type_equation_1.
