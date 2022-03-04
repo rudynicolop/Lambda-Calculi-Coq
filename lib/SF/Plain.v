@@ -184,48 +184,57 @@ Notation "t '⦗' τ '⦘'"
 
 Reserved Notation "x ⊢ y ∈ z" (at level 80, no associativity).
 
-Inductive trm_typ (Δ : nat) (Γ : list typ) : trm -> typ -> Prop :=
+Record tenv : Set := { dpth:nat; typs:list typ }.
+
+Definition push (τ : typ) '({| dpth:=Δ; typs:=Γ |} : tenv) : tenv :=
+  {| dpth:=Δ; typs:=τ::Γ |}.
+
+Definition rename_tenv '({| dpth:=Δ; typs:=Γ |} : tenv) : tenv :=
+  {| dpth:=S Δ; typs:=map (rename_typ S) Γ |}.
+
+Coercion dpth : tenv >-> nat.
+
+Inductive trm_typ (Γ : tenv) : trm -> typ -> Prop :=
 | Id_typ x τ :
-  nth_error Γ x = Some τ ->
-  (Δ,Γ) ⊢ x ∈ τ
+  nth_error (typs Γ) x = Some τ ->
+  Γ ⊢ x ∈ τ
 | Abs_typ τ τ' t :
-  Δ ⊢ok τ ->
-  (Δ,τ::Γ) ⊢  t            ∈ τ' ->
-  (Δ,  Γ) ⊢ (λ τ ⇒ t)%trm ∈ (τ → τ')%typ
+  Γ ⊢ok τ ->
+  push τ Γ ⊢ t ∈ τ' ->
+  Γ ⊢ (λ τ ⇒ t)%trm ∈ (τ → τ')%typ
 | App_typ τ τ' t₁ t₂ :
-  (Δ,Γ) ⊢  t₁           ∈ (τ → τ')%typ ->
-  (Δ,Γ) ⊢  t₂           ∈  τ ->
-  (Δ,Γ) ⊢ (t₁ ⋅ t₂)%trm ∈  τ'
+  Γ ⊢ t₁ ∈ (τ → τ')%typ ->
+  Γ ⊢ t₂ ∈  τ ->
+  Γ ⊢ (t₁ ⋅ t₂)%trm ∈ τ'
 | TypAbs_typ τ t :
-  (S Δ, map (rename_typ S) Γ) ⊢    t      ∈    τ ->
-  (  Δ,                    Γ) ⊢ (Λ t)%trm ∈ (∀ τ)%typ
+  rename_tenv Γ ⊢ t ∈ τ ->
+  Γ ⊢ (Λ t)%trm ∈ (∀ τ)%typ
 | TypApp_typ τ τ' t :
-  Δ ⊢ok τ' ->
-  (Δ,Γ) ⊢  t           ∈ (∀ τ)%typ ->
-  (Δ,Γ) ⊢ (t ⦗τ'⦘)%trm ∈ (τ `[[τ']])%typ
-where "x ⊢ y ∈ z" := (trm_typ (fst x) (snd x) y z) : type_scope.
+  Γ ⊢ok τ' ->
+  Γ ⊢ t ∈ (∀ τ)%typ ->
+  Γ ⊢ (t ⦗τ'⦘)%trm ∈ (τ `[[τ']])%typ
+where "x ⊢ y ∈ z" := (trm_typ x y z) : type_scope.
 
 Local Hint Constructors trm_typ : core.
 
-Local Hint Unfold fst : core.
-Local Hint Unfold snd : core.
-
-Lemma trm_typ_ok : forall Δ Γ t τ,
-    (Δ,Γ) ⊢ t ∈ τ ->
-    Forall (ok_typ Δ) Γ ->
-    Δ ⊢ok τ.
+Lemma trm_typ_ok : forall Γ t τ,
+    Γ ⊢ t ∈ τ ->
+    Forall (ok_typ Γ) (typs Γ) ->
+    Γ ⊢ok τ.
 Proof.
-  intros Δ Γ t τ h hΓ; cbn in *.
+  intros Γ t τ h hΓ.
   induction h as
-    [ Δ Γ X τ hX
-    | Δ Γ τ t hok h ih
-    | Δ Γ τ τ' t₁ t₂ h₁ ih₁ h₂ ih₂
-    | Δ Γ τ t h ih
-    | Δ Γ τ τ' t hok h ih ]; cbn in *; eauto.
+    [ Γ X τ hX
+    | Γ τ t hok h ih
+    | Γ τ τ' t₁ t₂ h₁ ih₁ h₂ ih₂
+    | Γ τ t h ih
+    | Γ τ τ' t hok h ih ]; cbn in *.
   - rewrite Forall_forall in hΓ.
     eauto using nth_error_In.
+  - destruct Γ as [Δ Γ]; cbn in *; auto.
   - pose proof ih₁ hΓ as ih; inv ih; assumption.
-  - constructor. apply ih.
+  - destruct Γ as [Δ Γ]; cbn in *.
+    constructor. apply ih.
     clear dependent t; clear dependent τ.
     rewrite Forall_forall in *.
     intros rτ h.
@@ -244,17 +253,137 @@ Fixpoint rename_trm (ρ : nat -> nat) (t : trm) : trm :=
   | (t ⦗τ⦘)%trm   => (rename_trm ρ t ⦗τ⦘)%trm
   end.
 
+Lemma ext_typs : forall (Γ₁ Γ₂ : list typ) (ρ : nat -> nat),
+    (forall y τ', nth_error Γ₁ y     = Some τ' ->
+             nth_error Γ₂ (ρ y) = Some τ') ->
+    forall x τ τ', nth_error (τ :: Γ₁) x = Some τ' ->
+              nth_error (τ :: Γ₂) (ext ρ x) = Some τ'.
+Proof.
+  intros Γ₁ Γ₂ ρ hρ [| X] τ τ' h; cbn in *; auto.
+Qed.
+
+Local Hint Resolve ext_typs : core.
+
+Lemma nth_error_map_ex : forall (U V : Set) (f : U -> V) l n v,
+      nth_error (map f l) n = Some v ->
+      exists u, f u = v /\ nth_error l n = Some u.
+Proof.
+  intros U V f l.
+  induction l as [| u' l IHl];
+    intros [| n] v h; cbn in *; try discriminate; eauto.
+  inv h; eauto.
+Qed.
+
+Lemma rename_typ_ext_typs : forall (Γ₁ Γ₂ : list typ) (ρ : nat -> nat),
+    (forall y τ', nth_error Γ₁ y = Some τ' -> nth_error Γ₂ (ρ y) = Some τ') ->
+    forall x τ,
+      nth_error (map (rename_typ S) Γ₁) x = Some τ ->
+      nth_error (map (rename_typ S) Γ₂) (ρ x) = Some τ.
+Proof.
+  intros Γ₁ Γ₂ ρ hρ x rτ h.
+  apply nth_error_map_ex in h as (τ & ? & h); subst.
+  auto using map_nth_error.
+Qed.
+
+Local Hint Resolve rename_typ_ext_typs : core.
+
+Lemma rename_trm_typs :
+  forall (Δ : nat) (Γ₁ Γ₂ : list typ)
+    (ρ : nat -> nat) (t : trm) (τ : typ),
+    (forall y τ', nth_error Γ₁ y = Some τ' ->
+             nth_error Γ₂ (ρ y) = Some τ') ->
+    {| dpth:=Δ; typs:=Γ₁ |} ⊢ t ∈ τ ->
+    {| dpth:=Δ; typs:=Γ₂ |} ⊢ rename_trm ρ t ∈ τ.
+Proof.
+  intros Δ Γ₁ Γ₂ ρ t τ hρ h.
+  generalize dependent ρ.
+  generalize dependent Γ₂.
+  remember {| dpth:=Δ; typs:=Γ₁ |} as ΔΓ₁ eqn:eqΓ₁.
+  generalize dependent Γ₁.
+  generalize dependent Δ.
+  induction h as
+    [ Γ X τ hX
+    | Γ τ τ' t hok h ih
+    | Γ τ τ' t₁ t₂ h₁ ih₁ h₂ ih₂
+    | Γ τ t h ih
+    | Γ τ τ' t hok h ih ]; cbn in *;
+    intros Δ Γ₁ eq Γ₂ ρ hρ; subst; cbn in *; eauto.
+Qed.
+
+Local Hint Resolve rename_trm_typs : core.
+
 Definition exts_trm (σ : nat -> trm) (x : nat) : trm :=
   match x with
   | O   => O
   | S n => rename_trm S (σ n)
   end.
 
-Fail Fixpoint subs_trm (σ : nat -> trm) (t : trm) : trm :=
+Lemma exts_trm_typs : forall (Δ : nat) (Γ₁ Γ₂ : list typ) (σ : nat -> trm),
+    (forall y τ', nth_error Γ₁ y = Some τ' ->
+             {| dpth:=Δ; typs:=Γ₂ |} ⊢ σ y ∈ τ') ->
+    forall x τ τ', nth_error (τ :: Γ₁) x = Some τ' ->
+              {| dpth:=Δ; typs:=τ::Γ₂ |} ⊢ exts_trm σ x ∈ τ'.
+Proof.
+  intros Δ Γ₁ Γ₂ σ hσ [| x] τ τ' h; cbn in *; eauto.
+Qed.
+
+Local Hint Resolve exts_trm_typs : core.
+
+Fixpoint rename_typ_trm (ρ : nat -> nat) (t : trm) : trm :=
+  match t with
+  | Id x => Id x
+  | (λ τ ⇒ t)%trm => (λ rename_typ ρ τ ⇒ rename_typ_trm ρ t)%trm
+  | (t₁ ⋅ t₂)%trm => (rename_typ_trm ρ t₁ ⋅ rename_typ_trm ρ t₂)%trm
+  | (Λ t)%trm     => (Λ rename_typ_trm (ext ρ) t)%trm
+  | (t ⦗τ⦘)%trm   => (rename_typ_trm ρ t ⦗rename_typ ρ τ⦘)%trm
+  end.
+
+Lemma rename_typ_trm_typs : forall (Δ₁ Δ₂ : nat) (Γ : list typ) (ρ : nat -> nat),
+    (forall Y, Y < Δ₁ -> ρ Y < Δ₂) ->
+    forall t τ, {| dpth:=Δ₁; typs:=Γ |} ⊢ t ∈ τ ->
+           {| dpth:=Δ₂; typs:=map (rename_typ ρ) Γ |}
+             ⊢ rename_typ_trm ρ t ∈ rename_typ ρ τ.
+Proof.
+  intros Δ₁ Δ₂ Γ ρ hρ t τ h.
+  generalize dependent ρ.
+  generalize dependent Δ₂.
+  remember {| dpth := Δ₁; typs := Γ |} as Δ₁Γ eqn:eqΔ₁Γ.
+  generalize dependent Γ.
+  generalize dependent Δ₁.
+  induction h as
+    [ Δ₁Γ X τ hX
+    | Δ₁Γ τ τ' t hok h ih
+    | Δ₁Γ τ τ' t₁ t₂ h₁ ih₁ h₂ ih₂
+    | Δ₁Γ τ t h ih
+    | Δ₁Γ τ τ' t hok h ih ]; cbn in *;
+    intros Δ₁ Γ eq Δ₂ ρ hρ; subst;
+    cbn in *; eauto using map_nth_error.
+  - constructor; cbn; eauto.
+    specialize ih with (Γ:=τ :: Γ); cbn in ih; eauto.
+  - constructor; cbn.
+    pose proof ih _ _ eq_refl _ (ext ρ) (fun X => ext_ok _ _ _ X hρ) as IH.
+    enough (help:
+             map (rename_typ (ext ρ)) (map (rename_typ S) Γ)
+             = map (rename_typ S) (map (rename_typ ρ) Γ)).
+    + rewrite help in IH; assumption.
+    + admit (* TODO! *).
+  - pose proof ih _ _ eq_refl _ _ hρ as IH.
+    apply TypApp_typ with (τ':=rename_typ ρ τ') in IH; eauto.
+    enough (help:
+             (rename_typ (ext ρ) τ `[[ rename_typ ρ τ']])%typ
+             = rename_typ ρ (τ `[[ τ']])%typ).
+    + rewrite help in IH; assumption.
+    + admit (* TODO! *).
+Admitted.
+
+Definition exts_rename_typ_trm (σ : nat -> trm) (X : nat) : trm :=
+  rename_typ_trm S (σ X).
+
+Fixpoint subs_trm (σ : nat -> trm) (t : trm) : trm :=
   match t with
   | Id x          => σ x
   | (λ τ ⇒ t)%trm => (λ τ ⇒ subs_trm (exts_trm σ) t)%trm
   | (t₁ ⋅ t₂)%trm => (subs_trm σ t₁ ⋅ subs_trm σ t₂)%trm
-  | (Λ t)%trm     => (Λ _)%trm (* TODO *)
+  | (Λ t)%trm     => (Λ subs_trm (exts_rename_typ_trm σ) t)%trm
   | (t ⦗τ⦘)%trm   => (subs_trm σ t ⦗τ⦘)%trm
   end.

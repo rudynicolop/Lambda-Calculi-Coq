@@ -494,6 +494,9 @@ Proof.
   apply Rename_type,σ,h.
 Defined.
 
+Unset Printing Implicit.
+(*Print exts_Rename_type.*)
+
 Equations subs : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
       (forall τ : type Δ, Has τ Γ₁ -> Γ₂ ⊢ τ) ->
       forall {τ : type Δ}, Γ₁ ⊢ τ -> Γ₂ ⊢ τ :=
