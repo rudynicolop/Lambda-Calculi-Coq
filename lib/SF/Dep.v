@@ -161,14 +161,17 @@ Proof.
       (p2:=f_equal S (eq_sym (plus_n_Sm k Δ₂0))).
     rewrite h; clear h.
     depelim X.
-    + do 2 rewrite ext_type_equation_1.
-      Fail reflexivity. admit.
+    + do 2 rewrite ext_type_equation_1. clear H.
+      destruct (plus_n_Sm k Δ₁).
+      destruct (plus_n_Sm k Δ₂0). reflexivity.
     + do 2 rewrite ext_type_equation_2.
       rewrite map_subst_map.
       do 2 rewrite ext_type_equation_2.
-      rewrite H.
-      Fail reflexivity. admit.
-Admitted.
+      rewrite map_subst_map.
+      rewrite H. reflexivity.
+Qed.
+
+Print Assumptions mapply_ext_type_eq.
 
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 
