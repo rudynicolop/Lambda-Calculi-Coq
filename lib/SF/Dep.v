@@ -1,6 +1,14 @@
 Require Export Lambda.Util.
 From Equations Require Export Equations.
 Require Coq.Vectors.Fin.
+
+(** * System F *)
+
+Equations mapply : forall {A : nat -> Set} (m : nat),
+    (forall {n : nat}, A n -> A (S n)) -> forall {n : nat}, A n -> A (m + n) :=
+  mapply  O    f a := a;
+  mapply (S k) f a := f _ (mapply k f a).
+
 Module FIN.
   Export Coq.Vectors.Fin.
 
@@ -46,8 +54,6 @@ Module FIN.
     apply Nat.nlt_0_r in h. contradiction.
   Defined.
 End FIN.
-
-(** * System F *)
 
 Inductive type (Δ : nat) : Set :=
 | TId : Fin.t Δ -> type Δ
@@ -114,6 +120,55 @@ Definition sub_type {Δ : nat} (body : type (S Δ)) (arg : type Δ) : type Δ :=
 
 Notation "x '`[[' y ']]'"
   := (sub_type x y) (at level 12, no associativity) : ty_scope.
+
+Equations mapply_ext_type : forall {Δ₁ Δ₂ : nat} (m : nat),
+    (Fin.t Δ₁ -> Fin.t Δ₂) -> Fin.t (m + Δ₁) -> Fin.t (m + Δ₂) :=
+  mapply_ext_type  O    ρ := ρ;
+  mapply_ext_type (S k) ρ := ext_type (mapply_ext_type k ρ).
+
+Lemma mapply_ext_type_eq
+  : forall {Δ₁ Δ₂ : nat} (m : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (X : Fin.t (m + Δ₁)),
+    ext_type
+      (mapply_ext_type m ρ)
+      (eq_rect
+         _ _
+         (mapply_ext_type m Fin.FS X) _
+         (eq_sym (Plus.plus_Snm_nSm _ _)))
+    = eq_rect
+        _ _
+        (mapply_ext_type m Fin.FS (mapply_ext_type m ρ X)) _
+        (eq_sym (Plus.plus_Snm_nSm _ _)).
+Proof.
+  intros Δ₁ Δ₂ m ρ X.
+  funelim (mapply_ext_type m Fin.FS); cbn in *.
+  - do 3 rewrite mapply_ext_type_equation_1.
+    unfold Plus.plus_Snm_nSm,eq_sym.
+    rewrite Eqdep_dec.UIP_refl_nat
+      with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁).
+    rewrite Eqdep_dec.UIP_refl_nat
+      with (n:=S Δ₂0) (x:=plus_n_Sm 0 Δ₂0); cbn.
+    depelim X; rewrite ext_type_equation_2; reflexivity.
+  - do 3 rewrite mapply_ext_type_equation_2.
+    unfold Plus.plus_Snm_nSm.
+    pose proof Peano_dec.UIP_nat
+         _ _ (eq_sym (plus_n_Sm (S k) Δ₁)) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S (eq_sym (plus_n_Sm k Δ₁))).
+    rewrite h; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (eq_sym (plus_n_Sm (S k) Δ₂0)) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S (eq_sym (plus_n_Sm k Δ₂0))).
+    rewrite h; clear h.
+    depelim X.
+    + do 2 rewrite ext_type_equation_1.
+      Fail reflexivity. admit.
+    + do 2 rewrite ext_type_equation_2.
+      rewrite map_subst_map.
+      do 2 rewrite ext_type_equation_2.
+      rewrite H.
+      Fail reflexivity. admit.
+Admitted.
 
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 

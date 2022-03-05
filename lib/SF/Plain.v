@@ -120,7 +120,7 @@ Qed.
 
 Local Hint Resolve rename_typ_ok : core.
 
-Lemma hope : forall m ρ X,
+Lemma mapply_ext : forall m ρ X,
     ext (mapply m ext ρ) (mapply m ext S X) = mapply m ext S (mapply m ext ρ X).
 Proof.
   intro m; induction m as [| m ih]; intros ρ X; cbn.
@@ -128,33 +128,33 @@ Proof.
   - destruct X as [| X]; cbn; auto.
 Qed.
 
-Lemma plz : forall (τ : typ) (ρ : nat -> nat) (m : nat),
+Lemma mapply_rename_typ_ext : forall (τ : typ) (ρ : nat -> nat) (m : nat),
     rename_typ (mapply (S m) ext ρ) (rename_typ (mapply m ext S) τ)
     = rename_typ (mapply m ext S) (rename_typ (mapply m ext ρ) τ).
 Proof.
   intro τ; induction τ as [X | τ ih | τ₁ ih₁ τ₂ ih₂];
     intros ρ m; cbn.
-  - rewrite hope; reflexivity.
+  - rewrite mapply_ext; reflexivity.
   - f_equal; specialize ih with ρ (S m); cbn in ih.
     rewrite ih; reflexivity.
   - f_equal; eauto.
 Qed.
 
-Lemma sigh : forall (τ : typ) (*[(Δ₁ Δ₂ : nat)]*) (ρ : nat -> nat),
+Lemma rename_typ_ext : forall (τ : typ) (*[(Δ₁ Δ₂ : nat)]*) (ρ : nat -> nat),
     (*[(forall Y : nat, Y < Δ₁ -> ρ Y < Δ₂) ->] *)
     rename_typ (ext ρ) (rename_typ S τ) = rename_typ S (rename_typ ρ τ).
 Proof.
-  intros τ ρ; pose proof plz τ ρ 0 as h.
+  intros τ ρ; pose proof mapply_rename_typ_ext τ ρ 0 as h.
   cbn in h; assumption.
 Qed.
 
-Lemma halp : forall (*[(Δ₁ Δ₂ : nat)]*) (ρ : nat -> nat) (Γ : list typ),
+Lemma map_rename_typ_ext : forall (*[(Δ₁ Δ₂ : nat)]*) (ρ : nat -> nat) (Γ : list typ),
     (*[(forall Y : nat, Y < Δ₁ -> ρ Y < Δ₂) ->]*)
     map (rename_typ (ext ρ)) (map (rename_typ S) Γ)
     = map (rename_typ S) (map (rename_typ ρ) Γ).
 Proof.
   intros ρ Γ; induction Γ as [| τ Γ ih];
-    cbn; f_equal; auto using sigh.
+    cbn; f_equal; auto using rename_typ_ext.
 Qed.
   
 Lemma exts_typ_ok : forall (Δ₁ Δ₂ X : nat) (σ : nat -> typ),
@@ -199,17 +199,17 @@ Qed.
 
 Local Hint Resolve sub_typ_ok : core.
 
-Lemma ugh : forall (m X : nat) (ρ : nat -> nat) (τ : typ),
+Lemma mapply_exts_typ : forall (m X : nat) (ρ : nat -> nat) (τ : typ),
     mapply m exts_typ (sub_typ_helper (rename_typ ρ τ)) (ext (mapply m ext ρ) X)
     = rename_typ (mapply m ext ρ) (mapply m exts_typ (sub_typ_helper τ) X).
 Proof.
   intro m; induction m as [| m ih]; intros X ρ τ; cbn.
   - destruct X as [| X]; cbn; reflexivity.
   - destruct X as [| X]; cbn; try reflexivity.
-    rewrite ih with (ρ:=ρ),sigh; reflexivity.
+    rewrite ih with (ρ:=ρ),rename_typ_ext; reflexivity.
 Qed.
 
-Lemma tunnel : forall (τ τ' : typ) (ρ : nat -> nat) (m : nat),
+Lemma mapply_subs_typ_exts_typ : forall (τ τ' : typ) (ρ : nat -> nat) (m : nat),
     subs_typ
       (mapply m exts_typ (sub_typ_helper (rename_typ ρ τ')))
       (rename_typ (mapply (S m) ext ρ) τ)
@@ -219,19 +219,19 @@ Lemma tunnel : forall (τ τ' : typ) (ρ : nat -> nat) (m : nat),
 Proof.
   intro τ; induction τ as [X | τ ih | τ₁ ih₁ τ₂ ih₂];
     intros τ' ρ m; cbn.
-  - rewrite ugh; reflexivity.
+  - rewrite mapply_exts_typ; reflexivity.
   - f_equal. specialize ih with (m:=S m); cbn in ih.
     rewrite ih; reflexivity.
   - f_equal; eauto.
 Qed.
         
-Lemma wah : forall (τ τ' : typ) (ρ : nat -> nat),
+Lemma rename_typ_sub_typ : forall (τ τ' : typ) (ρ : nat -> nat),
     (rename_typ (ext ρ) τ `[[ rename_typ ρ τ']])%typ
     = rename_typ ρ (τ `[[ τ']])%typ.
 Proof.
   unfold "_ `[[ _ ]]".
   intros τ τ' ρ.
-  pose proof tunnel τ τ' ρ 0 as h; cbn in h.
+  pose proof mapply_subs_typ_exts_typ τ τ' ρ 0 as h; cbn in h.
   assumption.
 Qed.
 
@@ -444,14 +444,14 @@ Proof.
     assert (help:
              map (rename_typ (ext ρ)) (map (rename_typ S) Γ)
              = map (rename_typ S) (map (rename_typ ρ) Γ))
-      by auto using halp.
+      by auto using map_rename_typ_ext.
     rewrite help in IH; assumption.
   - pose proof ih _ _ eq_refl _ _ hρ as IH.
     apply TypApp_typ with (τ':=rename_typ ρ τ') in IH; eauto.
     assert (help:
              (rename_typ (ext ρ) τ `[[ rename_typ ρ τ']])%typ
              = rename_typ ρ (τ `[[ τ']])%typ)
-      by auto using wah.
+      by auto using rename_typ_sub_typ.
     rewrite help in IH; assumption.
 Qed.
 
