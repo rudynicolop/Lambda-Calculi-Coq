@@ -190,27 +190,8 @@ Fail Lemma eq_rect_dumb :
     eq_rect x T (f t) y h =
       f (eq_rect x T t y h).
 
-Check eq_rect.
-
 Equations Eq_rect : forall {A : Set} {x y : A} {T : A -> Set}, x = y -> T x -> T y :=
   Eq_rect eq_refl t := t.
-
-Lemma mapply_ext_type_Eq_rect
-  : forall {Δ₁ Δ₂ : nat} (m : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (X : Fin.t (m + Δ₁)),
-    ext_type
-      (mapply_ext_type m ρ)
-      (Eq_rect
-         (eq_sym (plus_n_Sm _ _))
-         (mapply_ext_type m Fin.FS X))
-    = Eq_rect
-        (eq_sym (plus_n_Sm _ _))
-        (mapply_ext_type m Fin.FS (mapply_ext_type m ρ X)).
-Proof.
-  intros Δ₁ Δ₂ m ρ X.
-  funelim (mapply_ext_type m Fin.FS); cbn in *.
-  - do 3 rewrite mapply_ext_type_equation_1; cbn.
-    funelim (Eq_rect (eq_sym (plus_n_Sm 0 Δ₁)) (Fin.FS X)).
-Abort.
 
 Equations eq_rect_zwei : forall {A B : Set} {x y : A} {u v : B} {T : A -> B -> Set},
     x = y -> u = v -> T x u -> T y v :=
@@ -291,6 +272,8 @@ Proof.
       rewrite H; reflexivity.
 Defined.
 
+Print Assumptions mapply_ext_type_eq_rect_zwei.
+
 Lemma mapply_rename_type_ext_type :
   forall {Δ₁ Δ₂ : nat} (m : nat) (τ : type (m + Δ₁)) (ρ : Fin.t Δ₁ -> Fin.t Δ₂),
     @rename_type (m + S Δ₁) (m + S Δ₂)
@@ -310,7 +293,10 @@ Proof.
   - do 4 rewrite rename_type_equation_2; f_equal.
     specialize IHτ with (m:=S m) (τ:=τ) (Δ₂:=Δ₂) (ρ:=ρ).
     repeat rewrite mapply_ext_type_equation_2 in *.
-    assert (doh : {| pr1 := S m + Δ₁; pr2 := τ |} = {| pr1 := S (m + Δ₁); pr2 := τ |}) by reflexivity.
+    assert
+      (doh : {| pr1 := S m + Δ₁; pr2 := τ |}
+             = {| pr1 := S (m + Δ₁); pr2 := τ |})
+      by reflexivity.
     apply IHτ in doh as IH; clear IHτ doh.
     pose proof Peano_dec.UIP_nat
          _ _ (plus_n_Sm (S m) Δ₁) as h; cbn in h.
@@ -328,51 +314,23 @@ Proof.
     rewrite IHτ1, IHτ2; reflexivity.
 Defined.
 
-(*Lemma mapply_rename_type_ext_type :
-  forall {Δ₁ Δ₂ : nat} (m : nat) (τ : type (m + Δ₁)) (ρ : Fin.t Δ₁ -> Fin.t Δ₂),
-    rename_type
-      (mapply_ext_type (S m) ρ)
-      (eq_rect
-         _ _
-         (rename_type (mapply_ext_type m Fin.FS) τ) _
-         (eq_sym (plus_n_Sm _ _)))
-    = eq_rect
-        _ _
-        (rename_type
-           (mapply_ext_type m Fin.FS)
-           (rename_type (mapply_ext_type m ρ) τ)) _
-        (eq_sym (plus_n_Sm _ _)).
+Print Assumptions mapply_rename_type_ext_type.
+
+Lemma rename_type_ext_type : forall {Δ₁ Δ₂ : nat} (τ : type Δ₁) (ρ : Fin.t Δ₁ -> Fin.t Δ₂),
+    rename_type (ext_type ρ) (rename_type Fin.FS τ)
+    = rename_type Fin.FS (rename_type ρ τ).
 Proof.
-  intros Δ₁ Δ₂ m τ ρ.
-  funelim (rename_type (mapply_ext_type m ρ) τ).
-  - do 3 rewrite rename_type_equation_1; cbn.
-    admit.
-  - do 3 rewrite rename_type_equation_2; cbn.
-    admit.
-  - do 3 rewrite rename_type_equation_3; cbn.
-    Check TArrow (rename_type (mapply_ext_type m Fin.FS) (rename_type (mapply_ext_type m ρ0) τ)).
-    Search (forall (f : ?T ?x -> ?T ?x) (t : ?T ?x),
-               _ = eq_rect _ _ (f t) _ _).
-    Search (eq_rect _ _ (?f _) _ _).
-    Check map_subst.
-    Check map_subst_map.
-    pose proof @map_subst_map as h.
-    specialize h with (f:=@id nat).
-    specialize h with (H:=eq_sym (plus_n_Sm m Δ₂0)).
-    rewrite f_equal_id in h.
-    unfold id in h; cbn in h.
-    Set Printing Implicit.
-    Check @rename_type _ _ (mapply_ext_type m Fin.FS).
-    Check (fun d2 => @rename_type (m + d2) (m + S d2) (mapply_ext_type m Fin.FS)).
-    
-    specialize h with (g:=rename_type (mapply_ext_type m Fin.FS)).
-    Check eq_sym (plus_n_Sm m Δ₂0).
-    Check fun f => map_subst_map f rename_type
-    Check (mapply_ext_type m Fin.FS).
-    rewrite <- map_subst_map.
-    pose proof map_subst (TArrow (rename_type (mapply_ext_type m Fin.FS) τ)).
-    Check @TArrow.
-    rewrite map_subst.*)
+  intros Δ₁ Δ₂ τ ρ.
+  pose proof mapply_rename_type_ext_type 0 τ ρ as h.
+  rewrite mapply_ext_type_equation_2 in h.
+  do 3 rewrite mapply_ext_type_equation_1 in h.
+  rewrite Eqdep_dec.UIP_refl_nat
+    with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁) in h.
+  rewrite Eqdep_dec.UIP_refl_nat
+    with (n:=S Δ₂) (x:=plus_n_Sm 0 Δ₂) in h; cbn.
+  rewrite eq_rect_zwei_equation_1 in h.
+  assumption.
+Defined.
 
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 
