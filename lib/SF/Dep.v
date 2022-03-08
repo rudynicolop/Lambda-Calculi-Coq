@@ -188,8 +188,6 @@ Equations eq_rect_zwei : forall {A B : Set} {x y : A} {u v : B} {T : A -> B -> S
     x = y -> u = v -> T x u -> T y v :=
   eq_rect_zwei eq_refl eq_refl t := t.
 
-Search (eq_rect _ _ _ _ (f_equal _ _)).
-
 Lemma map_subst_map_zwei_1 :
   forall {A B C : Set} {P : A -> B -> Set} {Q : C -> B -> Set}
     (f : A -> C) (g : forall a b, P a b -> Q (f a) b)
@@ -331,9 +329,6 @@ Proof.
   induction Γ as [| τ Γ ih]; cbn; f_equal; auto.
   rewrite rename_type_ext_type; reflexivity.
 Defined.
-
-Check @mapply_ext_type.
-Check exts_type.
 
 Equations mapply_exts_type : forall {Δ₁ Δ₂ : nat} (m : nat),
     (Fin.t Δ₁ -> type Δ₂) -> Fin.t (m + Δ₁) -> type (m + Δ₂) :=
@@ -550,6 +545,24 @@ Proof.
     rewrite rename_type_equation_3; f_equal; eauto.
 Defined.
 
+Lemma rename_type_distr_sub_type :
+  forall {Δ₁ Δ₂ : nat} (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type (S Δ₁)) (τ' : type Δ₁),
+    (rename_type (ext_type ρ) τ `[[ rename_type ρ τ']])%ty
+    = rename_type ρ (τ `[[ τ']])%ty.
+Proof.
+  intros Δ₁ Δ₂ ρ τ τ'; unfold "_ `[[ _ ]]".
+  pose proof mapply_subs_type_exts_type 0 ρ τ τ' as h.
+  rewrite Eqdep_dec.UIP_refl_nat
+    with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁) in h.
+  rewrite Eqdep_dec.UIP_refl_nat
+    with (n:=S Δ₂) (x:=plus_n_Sm 0 Δ₂) in h.
+  do 2 rewrite eq_rect_zwei_equation_1 in h.
+  rewrite mapply_ext_type_equation_2 in h.
+  rewrite mapply_ext_type_equation_1 in h.
+  do 2 rewrite mapply_exts_type_equation_1 in h.
+  assumption.
+Defined.
+
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 
 Inductive term : forall {Δ : nat}, list (type Δ) -> type Δ -> Set :=
@@ -648,37 +661,6 @@ Proof.
     intros α has; cbn; right; exact has.
 Defined.
 
-Lemma annoyed :
-  forall (Δ₁ Δ₂ : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type (S Δ₁)) (τ' : type Δ₁),
-    (rename_type (ext_type ρ) τ `[[ rename_type ρ τ']])%ty
-    = rename_type ρ (τ `[[ τ']])%ty.
-Proof.
-  intros Δ₁ Δ₂ ρ τ τ'.
-  unfold "_ `[[ _ ]]".
-  (*Check (exts_type,rename_type).
-  Check rename_type.
-  Print exts_type.
-  Check @subs_type.*)
-  Set Printing Implicit.
-  (*Check rename_type.
-  Check subs_type.
-  Check @rename_type Δ₁ Δ₂ ρ (@subs_type (S Δ₁) Δ₁ (@sub_type_helper Δ₁ τ') τ).*)
-  (*subs_type σ (rename_type ρ τ) = rename_type ρ (subs_type σ τ)*)
-  funelim (rename_type (ext_type ρ) τ).
-  - rewrite rename_type_equation_1.
-    do 2 rewrite subs_type_equation_1.
-    funelim (ext_type ρ0 n).
-    + rewrite ext_type_equation_1.
-      do 2 rewrite sub_type_helper_equation_1. reflexivity.
-    + rewrite ext_type_equation_2.
-      do 2 rewrite sub_type_helper_equation_2.
-      rewrite rename_type_equation_1. reflexivity.
-  - rewrite rename_type_equation_2.
-    do 2 rewrite subs_type_equation_2.
-    rewrite rename_type_equation_2.
-    f_equal.
-Admitted.
-
 Equations Rename_type :
   forall {Δ₁ Δ₂ : nat} {Γ : list (type Δ₁)}
     (ρ : Fin.t Δ₁ -> Fin.t Δ₂) {τ : type Δ₁},
@@ -687,32 +669,21 @@ Equations Rename_type :
   Rename_type ρ (`λ t)%term := (`λ Rename_type ρ t)%term;
   Rename_type ρ (t ⋅ t')%term := (Rename_type ρ t ⋅ Rename_type ρ t')%term;
   Rename_type (Δ₁:=Δ₁) (Δ₂:=Δ₂) (Γ:=Γ) ρ (TypAbs _ τ t) :=
-    (** [TypAbs _ (rename_type (ext_type ρ) τ) (Rename_type (ext_type ρ) t)]
-        The term "Rename_type (S Δ₁) (S Δ₂) (map (rename_type Fin.FS) Γ) (ext_type ρ) τ t" has type
-        "map (rename_type (ext_type ρ)) (map (rename_type Fin.FS) Γ) ⊢ rename_type (ext_type ρ) τ"
-        while it is expected to have type "map (rename_type Fin.FS) ?Γ ⊢ rename_type (ext_type ρ) τ". *)
-    (** [(Λ Rename_type (ext_type ρ) t)%term]
-        The term "Rename_type (S Δ₁) (S Δ₂) (map (rename_type Fin.FS) Γ) (ext_type ρ) τ t" has type
-        "map (rename_type (ext_type ρ)) (map (rename_type Fin.FS) Γ) ⊢ rename_type (ext_type ρ) τ"
-        while it is expected to have type "map (rename_type Fin.FS) ?Γ ⊢ ?τ". *)
     (Λ eq_rect
        (map (rename_type (ext_type ρ)) (map (rename_type Fin.FS) Γ))
        (fun Γ => Γ ⊢ rename_type (ext_type ρ) τ)
        (Rename_type (ext_type ρ) t)
        (map (rename_type Fin.FS) (map (rename_type ρ) Γ)) _)%term;
   Rename_type (Δ₁:=Δ₁) (Δ₂:=Δ₂) (Γ:=Γ) ρ (TypApp _ τ τ' t)%term :=
-    (** [(Rename_type ρ t ⦗ rename_type ρ τ' ⦘)%term]
-        The term "(Rename_type Δ₁ Δ₂ Γ ρ (∀ τ)%ty t ⦗ rename_type ρ τ' ⦘)%term" has type
-        "map (rename_type ρ) Γ
-        ⊢ @rename_type (S Δ₁) (S Δ₂) (ext_type ρ) τ `[[ rename_type ρ τ']])%ty" while it is expected to have type
-        "map (rename_type ρ) Γ ⊢ rename_type ρ (τ `[[ τ']])%ty". *)
     eq_rect
       (rename_type (ext_type ρ) τ `[[ rename_type ρ τ']])%ty
       (fun τ => map (rename_type ρ) Γ ⊢ τ)
       (Rename_type ρ t ⦗ rename_type ρ τ' ⦘)%term
       (rename_type ρ (τ `[[ τ']])%ty) _.
 Next Obligation. apply map_rename_typ_ext. Defined.
-Next Obligation. apply annoyed. Defined.
+Next Obligation. apply rename_type_distr_sub_type. Defined.
+
+Print Assumptions Rename_type.
 
 Definition exts_Rename_type : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
     (forall τ : type Δ, Has τ Γ₁ -> Γ₂ ⊢ τ) -> forall τ : type (S Δ),
@@ -724,9 +695,6 @@ Proof.
   apply Rename_type,σ,h.
 Defined.
 
-Unset Printing Implicit.
-(*Print exts_Rename_type.*)
-
 Equations subs : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
       (forall τ : type Δ, Has τ Γ₁ -> Γ₂ ⊢ τ) ->
       forall {τ : type Δ}, Γ₁ ⊢ τ -> Γ₂ ⊢ τ :=
@@ -735,3 +703,5 @@ Equations subs : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
   subs σ (t₁ ⋅ t₂)%term := (subs σ t₁ ⋅ subs σ t₂)%term;
   subs σ (Λ t)%term     := (Λ subs (exts_Rename_type σ) t)%term;
   subs σ (t ⦗ τ ⦘)%term := (subs σ t ⦗ τ ⦘)%term.
+
+Print Assumptions subs.
