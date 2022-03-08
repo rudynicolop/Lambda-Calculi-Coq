@@ -184,15 +184,6 @@ Qed.
 
 Print Assumptions mapply_ext_type_eq.
 
-Fail Lemma eq_rect_dumb :
-  forall (A : Set) (dec : forall (x y : A), {x = y} + {x <> y})
-    (T : A -> Set) (x y : A) (h : x = y) (f : T x -> T x) (t : T x),
-    eq_rect x T (f t) y h =
-      f (eq_rect x T t y h).
-
-Equations Eq_rect : forall {A : Set} {x y : A} {T : A -> Set}, x = y -> T x -> T y :=
-  Eq_rect eq_refl t := t.
-
 Equations eq_rect_zwei : forall {A B : Set} {x y : A} {u v : B} {T : A -> B -> Set},
     x = y -> u = v -> T x u -> T y v :=
   eq_rect_zwei eq_refl eq_refl t := t.
@@ -332,6 +323,233 @@ Proof.
   assumption.
 Defined.
 
+Lemma map_rename_typ_ext : forall {Δ₁ Δ₂ : nat} (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (Γ : list (type Δ₁)),
+    map (rename_type (ext_type ρ)) (map (rename_type Fin.FS) Γ)
+    = map (rename_type Fin.FS) (map (rename_type ρ) Γ).
+Proof.
+  intros Δ₁ Δ₂ ρ Γ.
+  induction Γ as [| τ Γ ih]; cbn; f_equal; auto.
+  rewrite rename_type_ext_type; reflexivity.
+Defined.
+
+Check @mapply_ext_type.
+Check exts_type.
+
+Equations mapply_exts_type : forall {Δ₁ Δ₂ : nat} (m : nat),
+    (Fin.t Δ₁ -> type Δ₂) -> Fin.t (m + Δ₁) -> type (m + Δ₂) :=
+  mapply_exts_type  O    σ := σ;
+  mapply_exts_type (S k) σ := exts_type (mapply_exts_type k σ).
+
+Fail Lemma mapply_exts_type_sub_type_helper :
+  forall {Δ₁ Δ₂ : nat} (m : nat)
+    (ρ : Fin.t Δ₁ -> Fin.t Δ₂)
+    (X : Fin.t (S (m + Δ₁))) (τ : type Δ₁),
+    mapply_exts_type
+      m (sub_type_helper (rename_type ρ τ))
+      (ext_type (mapply_ext_type m ρ) X)
+    = rename_type
+        (mapply_ext_type m ρ)
+        (mapply_exts_type m (sub_type_helper τ) X).
+
+Fail Lemma mapply_subs_type_exts_type :
+  forall {Δ₁ Δ₂ : nat} (m : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂)
+    (τ : type (S m + Δ₁)) (τ' : type Δ₁),
+    subs_type
+      (mapply_exts_type
+         m (sub_type_helper (rename_type ρ τ')))
+      (rename_type
+         (mapply_ext_type (S m) ρ) τ)
+    = rename_type
+        (mapply_ext_type m ρ)
+        (subs_type
+           (mapply_exts_type m (sub_type_helper τ')) τ).
+
+Lemma mapply_subs_type_helper :
+  forall (m : nat) {Δ₁ Δ₂ : nat} (ρ : Fin.t Δ₁ -> Fin.t Δ₂)
+    (X : Fin.t (S m + Δ₁)) (τ' : type Δ₁),
+    eq_rect_zwei
+      (T:=fun u v => Fin.t u -> type v)
+      (eq_sym (plus_n_Sm m Δ₂)) eq_refl
+      (mapply_exts_type
+         m
+         (sub_type_helper (rename_type ρ τ')))
+      (mapply_ext_type (S m) ρ X)
+    = rename_type
+        (mapply_ext_type m ρ)
+        (eq_rect_zwei
+           (T:=fun u v => Fin.t u -> type v)
+           (eq_sym (plus_n_Sm m Δ₁)) eq_refl
+           (mapply_exts_type m (sub_type_helper τ')) X).
+Proof.
+  intros m; induction m as [| m ih];
+    intros Δ₁ Δ₂ ρ X τ'; cbn in *.
+  - rewrite Eqdep_dec.UIP_refl_nat
+      with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁).
+    rewrite Eqdep_dec.UIP_refl_nat
+      with (n:=S Δ₂) (x:=plus_n_Sm 0 Δ₂); cbn.
+    do 2 rewrite eq_rect_zwei_equation_1.
+    rewrite mapply_ext_type_equation_2.
+    rewrite mapply_ext_type_equation_1.
+    do 2 rewrite mapply_exts_type_equation_1.
+    funelim (ext_type ρ X).
+    + rewrite ext_type_equation_1.
+      do 2 rewrite sub_type_helper_equation_1.
+      reflexivity.
+    + rewrite ext_type_equation_2.
+      do 2 rewrite sub_type_helper_equation_2.
+      rewrite rename_type_equation_1; reflexivity.
+  - pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S m) Δ₁) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S (plus_n_Sm m Δ₁)).
+    rewrite h; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S m) Δ₂) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S (plus_n_Sm m Δ₂)).
+    rewrite h; clear h.
+    do 2 rewrite eq_sym_map_distr.
+    Set Printing Implicit.
+    pose proof Peano_dec.UIP_nat
+         _ _ (@eq_refl _ (S (m + Δ₁))) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S eq_refl).
+    rewrite h; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (@eq_refl _ (S (m + Δ₂))) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S eq_refl).
+    rewrite h; clear h.
+    Unset Printing Implicit.
+    do 2 rewrite mapply_ext_type_equation_2.
+    do 2 rewrite mapply_exts_type_equation_2.
+    depelim X.
+    + rewrite ext_type_equation_1.
+      do 2 rewrite map_subst_map_zwei_both.
+      clear ih.
+      (*generalize dependent Δ₂.
+      generalize dependent Δ₁.
+      induction m as [| m ih]; intros Δ₁ τ' Δ₂ ρ.*)
+      destruct m as [| m].
+      * rewrite Eqdep_dec.UIP_refl_nat
+          with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁).
+        rewrite Eqdep_dec.UIP_refl_nat
+          with (n:=S Δ₂) (x:=plus_n_Sm 0 Δ₂); cbn.
+        do 2 rewrite eq_rect_zwei_equation_1.
+        do 2 rewrite exts_type_equation_1.
+        rewrite rename_type_equation_1.
+        rewrite ext_type_equation_1.
+        reflexivity.
+      * pose proof Peano_dec.UIP_nat
+             _ _ (plus_n_Sm (S m) Δ₁) as h; cbn in h.
+        specialize h with
+          (p2:=f_equal S (plus_n_Sm m Δ₁)).
+        rewrite h; clear h.
+        pose proof Peano_dec.UIP_nat
+             _ _ (plus_n_Sm (S m) Δ₂) as h; cbn in h.
+        specialize h with
+          (p2:=f_equal S (plus_n_Sm m Δ₂)).
+        rewrite h; clear h; cbn.
+        rewrite eq_sym_map_distr with (f:=S) (e:=plus_n_Sm m Δ₂).
+        Set Printing Implicit.
+        pose proof Peano_dec.UIP_nat
+             _ _ (@eq_refl _ (S (m + Δ₁))) as h; cbn in h.
+        specialize h with
+          (p2:=f_equal S eq_refl).
+        rewrite h; clear h.
+        pose proof Peano_dec.UIP_nat
+             _ _ (@eq_refl _ (S (m + Δ₂))) as h; cbn in h.
+        specialize h with
+          (p2:=f_equal S eq_refl).
+        rewrite h; clear h.
+        Unset Printing Implicit.
+        do 2 rewrite mapply_exts_type_equation_2.
+        rewrite map_subst_map_zwei_both.
+        do 2 rewrite exts_type_equation_1.
+        rewrite rename_type_equation_1,
+          ext_type_equation_1; reflexivity.
+    + rewrite ext_type_equation_2.
+      do 2 rewrite map_subst_map_zwei_both.
+      do 2 rewrite exts_type_equation_2.
+      rewrite rename_type_ext_type,<- ih; reflexivity.
+Defined.
+    
+Lemma mapply_subs_type_exts_type :
+  forall {Δ₁ Δ₂ : nat} (m : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂)
+    (τ : type (S m + Δ₁)) (τ' : type Δ₁),
+    subs_type
+      (Δ₁:=S m + Δ₂)
+      (Δ₂:=m + Δ₂)
+      (eq_rect_zwei
+         (T:=fun u v => Fin.t u -> type v)
+         (eq_sym (plus_n_Sm m Δ₂))
+         eq_refl
+         (mapply_exts_type
+            m
+            (sub_type_helper
+               (rename_type
+                  (Δ₁:=Δ₁) (Δ₂:=Δ₂) ρ τ'))))
+      (rename_type
+         (Δ₁:=S m + Δ₁) (Δ₂:=S m + Δ₂)
+         (mapply_ext_type (S m) ρ) τ)
+    = rename_type
+        (Δ₁:=m + Δ₁)
+        (Δ₂:=m + Δ₂)
+        (mapply_ext_type m ρ)
+        (subs_type
+           (Δ₁:=S m + Δ₁)
+           (Δ₂:=m + Δ₁)
+           (eq_rect_zwei
+              (T:=fun u v => Fin.t u -> type v)
+              (eq_sym (plus_n_Sm m Δ₁))
+              eq_refl
+              (mapply_exts_type
+                 m (sub_type_helper τ')))
+           τ).
+Proof.
+  intros Δ₁ Δ₂ m ρ τ; generalize dependent Δ₂.
+  depind τ; intros Δ₂ ρ τ'; cbn in *.
+  - rewrite rename_type_equation_1.
+    do 2 rewrite subs_type_equation_1.
+    rewrite mapply_subs_type_helper; reflexivity.
+  - rewrite rename_type_equation_2.
+    do 2 rewrite subs_type_equation_2.
+    rewrite rename_type_equation_2; f_equal.
+    specialize IHτ with (Δ₁:=Δ₁) (m:=S m) (τ:=τ).
+    pose proof IHτ eq_refl as ih; clear IHτ.
+    specialize ih with Δ₂ ρ τ'; cbn in *.
+    pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S m) Δ₁) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S (plus_n_Sm m Δ₁)).
+    rewrite h in ih; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S m) Δ₂) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S (plus_n_Sm m Δ₂)).
+    rewrite h in ih; clear h.
+    do 2 rewrite eq_sym_map_distr in ih.
+    Set Printing Implicit.
+    pose proof Peano_dec.UIP_nat
+         _ _ (@eq_refl _ (S (m + Δ₁))) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S eq_refl).
+    rewrite h in ih; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (@eq_refl _ (S (m + Δ₂))) as h; cbn in h.
+    specialize h with
+      (p2:=f_equal S eq_refl).
+    rewrite h in ih; clear h.
+    Unset Printing Implicit.
+    repeat rewrite mapply_ext_type_equation_2 in *.
+    repeat rewrite mapply_exts_type_equation_2 in *.
+    do 2 rewrite map_subst_map_zwei_both in ih.
+    rewrite <- ih. reflexivity.
+  - rewrite rename_type_equation_3.
+    do 2 rewrite subs_type_equation_3.
+    rewrite rename_type_equation_3; f_equal; eauto.
+Defined.
+
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 
 Inductive term : forall {Δ : nat}, list (type Δ) -> type Δ -> Set :=
@@ -430,211 +648,6 @@ Proof.
     intros α has; cbn; right; exact has.
 Defined.
 
-Lemma rename_type_comm :
-  forall {Δ₁ Δ₂ Δ₃ : nat} (τ : type Δ₁)
-    (f g : forall {Δ₁ Δ₂}, Fin.t Δ₁ -> Fin.t Δ₂),
-    (forall (Δ₁ Δ₂ Δ₃ : nat) (n : Fin.t Δ₁),
-        @f Δ₂ Δ₃ (g n) = @g Δ₂ Δ₃ (f n)) ->
-    rename_type (Δ₁:=Δ₂) (Δ₂:=Δ₃) f ((rename_type g) τ) =
-      rename_type (Δ₁:=Δ₂) (Δ₂:=Δ₃) g ((rename_type f) τ).
-Proof.
-  intros Δ₁ Δ₂ Δ₃ τ f g hfg.
-  funelim (rename_type (g Δ₁ Δ₂) τ).
-  - do 4 rewrite rename_type_equation_1.
-    rewrite hfg; reflexivity.
-  - do 4 rewrite rename_type_equation_2. f_equal.
-    (*Check ext_type (f Δ₂ Δ₃).
-    Check fun Δ₁ Δ₂ => ext_type (f Δ₁ Δ₂).*)
-    (*specialize H with (Δ₁:= S Δ₁) (Δ₂:=S Δ₂) (Δ₃:=S Δ₃).
-    specialize H with
-      (f:= fun Δ₁ Δ₂ => ext_type (f Δ₁ Δ₂)).
-    enough (eqf23: ext_type (f Δ₂ Δ₃) = (fun Δ₂ Δ₃ => ext_type (f Δ₂ Δ₃)) Δ₂ Δ₃).
-    rewrite eqf23.
-    replace () with ().
-  - do 4 rewrite rename_type_equation_3.
-      rewrite H, H0. reflexivity.*)
-Admitted.
-
-Lemma popit : forall {Δ₁ Δ₂ : nat} (τ : type Δ₁) (f : forall {Δ₁ Δ₂ : nat}, Fin.t Δ₁ -> Fin.t Δ₂),
-    (forall {Δ₁ Δ₂ : nat} (n : Fin.t Δ₁), Fin.FS (@f Δ₁ Δ₂ n) = f (Fin.FS n)) ->
-    rename_type Fin.FS (rename_type (@f Δ₁ Δ₂) τ) =
-      rename_type f (rename_type Fin.FS τ).
-Proof.
-  intros Δ₁ Δ₂ τ f hf.
-  funelim (rename_type (f Δ₁ Δ₂) τ).
-  - do 4 rewrite rename_type_equation_1.
-    rewrite hf; reflexivity.
-  - do 4 rewrite rename_type_equation_2; f_equal.
-Abort.
-
-Lemma sad :
-  forall (Δ₁ Δ₂ : nat) (f : Fin.t Δ₁ -> Fin.t Δ₂)
-    (g : forall {Δ}, Fin.t Δ -> Fin.t (S Δ)) (τ : type Δ₁),
-    rename_type (ext_type f) (rename_type g τ) =
-      rename_type g (rename_type f τ).
-Proof.
-  intros Δ₁ Δ₂ f g τ.
-  funelim (rename_type f τ).
-  - do 4 rewrite rename_type_equation_1.
-    admit.
-  - do 4 rewrite rename_type_equation_2.
-Abort.
-
-Equations ext_types : forall {Δ₁ Δ₂ : nat} (n : nat),
-    (Fin.t Δ₁ -> Fin.t Δ₂) -> Fin.t (n + Δ₁) -> Fin.t (n + Δ₂) :=
-  ext_types 0 ρ := ρ;
-  ext_types (S n) ρ := ext_type (ext_types n ρ).
-
-(* Search (forall n m : nat, S n + m = n + S m). *)
-
-Lemma super_sad : forall (Δ₁ Δ₂ n : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type (n + Δ₁)),
-    rename_type
-      (ext_types (S n) ρ)
-      (eq_rect
-         _ _
-         (rename_type (ext_types n Fin.FS) τ)
-         _ (eq_sym (plus_n_Sm n Δ₁)))
-    = eq_rect
-        _ _
-        (rename_type
-           (ext_types n Fin.FS)
-           (rename_type (ext_types n ρ) τ))
-        _ (eq_sym (plus_n_Sm n Δ₂)).
-Proof.
-  intros Δ₁ Δ₂ n ρ τ.
-  funelim (rename_type (ext_types n Fin.FS) τ).
-  - do 3 rewrite rename_type_equation_1.
-    (*Check Eqdep_dec.eq_rect_eq_dec.*)
-    Fail rewrite <- Eqdep_dec.eq_rect_eq_dec.
-    (*Search (?f (eq_rect _ _ _ _ _)).*)
-    Fail rewrite <- map_subst_map.
-    (*Check map_subst.*)
-    do 2 rewrite map_subst.
-    rewrite rename_type_equation_1.
-    admit.
-  - do 3 rewrite rename_type_equation_2.
-    (*Search (eq_rect _ _ (?f _)).*)
-    do 2 rewrite map_subst.
-    rewrite rename_type_equation_2; f_equal.
-    specialize H with (n:=S n).
-    pose proof ext_types_equation_2 as ets2.
-    specialize ets2 with (n :=S n) (ρ:=ρ0).
-    (*rewrite <- ets2.
-    Fail rewrite <- H.*)
-Abort.
-
-Fail Lemma super_sad : forall (Δ₁ Δ₂ n : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type (n + Δ₁)),
-    rename_type
-      (ext_types (S n) ρ)
-      (eq_rect
-         _ (fun Δ => type (n + Δ))
-         (rename_type (ext_types n Fin.FS) τ)
-         (S Δ₁) _)
-    = rename_type
-        (ext_types n Fin.FS)
-        (rename_type (ext_types n ρ) τ).
-
-Lemma wah : forall (Δ₁ Δ₂ : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type Δ₁),
-    rename_type (ext_type ρ) (rename_type Fin.FS τ) =
-      rename_type Fin.FS (rename_type ρ τ).
-Proof.
-  intros Δ₁ Δ₂ ρ τ.
-  (*Check ext_type ρ.*)
-  funelim (rename_type Fin.FS τ).
-  - do 4 rewrite rename_type_equation_1.
-    rewrite ext_type_equation_2. reflexivity.
-  - do 4 rewrite rename_type_equation_2; f_equal.
-    (*Check ext_type.*)
-    
-(*  funelim (rename_type ρ τ).
-  - do 4 rewrite rename_type_equation_1.
-    rewrite ext_type_equation_2. reflexivity.
-  - do 4 rewrite rename_type_equation_2; f_equal.
-    Check (ext_type Fin.FS).
-    admit (* why? *).
-  - do 4 rewrite rename_type_equation_3.
-    rewrite H,H0. reflexivity.*)
-Admitted.
-
-Lemma map_rename_type_ext_type_FS :
-  forall (Δ₁ Δ₂ : nat) (Γ : list (type Δ₁)) (ρ : Fin.t Δ₁ -> Fin.t Δ₂),
-    map (rename_type (ext_type ρ)) (map (rename_type Fin.FS) Γ) =
-      map (rename_type Fin.FS) (map (rename_type ρ) Γ).
-Proof.
-  intros Δ₁ Δ₂ Γ ρ.
-  induction Γ as [| τ Γ ih]; cbn; f_equal; auto.
-  rewrite wah; reflexivity.
-Defined.
-
-(* Lemma halp :,
-        subs_type σ (rename_type ρ τ) =
-          rename_type ρ (subs_type σ τ).*)
-
-(*Search ((Fin.t _ -> type _) -> Fin.t -> type _).*)
-
-Definition rename_suber : forall {Δ₁ Δ₂ Δ₃ : nat},
-    (Fin.t Δ₂ -> Fin.t Δ₃) -> (Fin.t Δ₁ -> type Δ₂) -> Fin.t Δ₂ -> type Δ₃.
-Proof.
-  intros Δ₁ Δ₂ Δ₃ ρ σ fn.
-  pose proof rename_type ρ as rt.
-Abort.
-
-(*Search ((Fin.t ?a -> Fin.t ?b) -> Fin.t ?c -> Fin.t ?d).*)
-
-Definition halp : forall {Δ₁ Δ₂ Δ₃ : nat},
-    (Fin.t Δ₂ -> Fin.t Δ₃) -> Fin.t Δ₁ -> Fin.t Δ₂.
-Proof.
-  intros Δ₁ Δ₂ Δ₃ ρ X.
-  (*Check ext_type.
-  Check rename_type Fin.FS.*)
-Abort.
-  
-(** [rename_type ρ τ : type (n + Δ)] uses
-    [ρ : fin Δ -> fin (n + Δ)]
-    to "increment" [τ : type Δ].
-    [subs_type σ τ : type Δ] uses
-    [σ : fin (m + Δ) -> type Δ]
-    to "decrement" [τ : type (m + Δ)] *)
-
-Section Expriment.
-  Variables Δ n m : nat.
-  Variable τ : type (m + Δ).
-  Variable ρ : Fin.t Δ -> Fin.t (n + Δ).
-  Variable σ : Fin.t (m + Δ) -> type Δ.
-  
-  (*Check subs_type σ τ : type Δ.
-  Check rename_type ρ (subs_type σ τ) : type (n + Δ).*)
-  Variable f : (Fin.t Δ -> Fin.t (n + Δ)) -> Fin.t (m + Δ) -> Fin.t (m + n + Δ).
-  Variable g : (Fin.t (m + Δ) -> type Δ) -> Fin.t (m + n + Δ) -> Fin.t (n + Δ).
-  (*Check subs_type (g σ) (rename_type (f ρ) τ) : type (n + Δ).*)
-End Expriment.
-
-Section Experiment2.
-  Variables Δ₁ Δ₂ m : nat.
-  Variable τ : type (m + Δ₁).
-  Variable ρ : Fin.t Δ₁ -> Fin.t Δ₂.
-  Variable σ : Fin.t (m + Δ₁) -> type Δ₁.
-  
-  (*Check subs_type σ τ : type Δ₁.
-  Check rename_type ρ (subs_type σ τ) : type Δ₂.*)
-  Variable f : (Fin.t Δ₁ -> Fin.t Δ₂) -> Fin.t (m + Δ₁) -> Fin.t (m + Δ₂).
-  Variable g : (Fin.t (m + Δ₁) -> type Δ₁) -> Fin.t (m + Δ₂) -> Fin.t Δ₂.
-  (*Check subs_type (g σ) (rename_type (f ρ) τ) : type Δ₂.*)
-End Experiment2.
-  
-Fail Lemma fudge
-  : forall (Δ₁ Δ₂ Δ₃ : nat)
-      (σ : Fin.t Δ₁ -> type Δ₂)
-      (ρ : Fin.t Δ₂ -> Fin.t Δ₃) (τ : type Δ₁),
-    rename_type ρ (subs_type σ τ) = subs_type _ (rename_type (Δ₁:=Δ₁) (Δ₂:=Δ₂) ρ τ).
-(*
-Proof.
-  intros Δ₁ Δ₂ Δ₃ σ ρ τ.
-  funelim (subs_type (σ Δ₁ Δ₂) τ).
-  - rewrite rename_type_equation_1.
-    do 2 rewrite subs_type_equation_1.
-    rewrite *)
-
 Lemma annoyed :
   forall (Δ₁ Δ₂ : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (τ : type (S Δ₁)) (τ' : type Δ₁),
     (rename_type (ext_type ρ) τ `[[ rename_type ρ τ']])%ty
@@ -698,7 +711,7 @@ Equations Rename_type :
       (fun τ => map (rename_type ρ) Γ ⊢ τ)
       (Rename_type ρ t ⦗ rename_type ρ τ' ⦘)%term
       (rename_type ρ (τ `[[ τ']])%ty) _.
-Next Obligation. apply map_rename_type_ext_type_FS. Defined.
+Next Obligation. apply map_rename_typ_ext. Defined.
 Next Obligation. apply annoyed. Defined.
 
 Definition exts_Rename_type : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
