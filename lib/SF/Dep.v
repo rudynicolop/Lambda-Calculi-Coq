@@ -126,7 +126,7 @@ Definition sub_type {Δ : nat} (body : type (S Δ)) (arg : type Δ) : type Δ :=
   subs_type (sub_type_helper arg) body.
 
 Notation "x '`[[' y ']]'"
-  := (sub_type x y) (at level 12, no associativity) : ty_scope.
+  := (sub_type x y) (at level 12, left associativity) : ty_scope.
 
 Equations mapply_ext_type : forall {Δ₁ Δ₂ : nat} (m : nat),
     (Fin.t Δ₁ -> Fin.t Δ₂) -> Fin.t (m + Δ₁) -> Fin.t (m + Δ₂) :=
@@ -419,12 +419,8 @@ Proof.
     do 2 rewrite mapply_ext_type_equation_2.
     do 2 rewrite mapply_exts_type_equation_2.
     depelim X.
-    + rewrite ext_type_equation_1.
+    + clear ih. rewrite ext_type_equation_1.
       do 2 rewrite map_subst_map_zwei_both.
-      clear ih.
-      (*generalize dependent Δ₂.
-      generalize dependent Δ₁.
-      induction m as [| m ih]; intros Δ₁ τ' Δ₂ ρ.*)
       destruct m as [| m].
       * rewrite Eqdep_dec.UIP_refl_nat
           with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁).
@@ -705,3 +701,97 @@ Equations subs : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
   subs σ (t ⦗ τ ⦘)%term := (subs σ t ⦗ τ ⦘)%term.
 
 Print Assumptions subs.
+
+Equations sub_helper : forall {Δ : nat} {Γ : list (type Δ)} {τ : type Δ},
+    Γ ⊢ τ -> forall (τ' : type Δ), Has τ' (τ :: Γ) -> Γ ⊢ τ' :=
+  sub_helper t _ (inl eq_refl) := t;
+  sub_helper _ _ (inr h)       := Id _ _ h.
+
+Definition sub {Δ : nat} {Γ : list (type Δ)} {τ τ' : type Δ}
+           (body : τ :: Γ ⊢ τ') (arg : Γ ⊢ τ) : Γ ⊢ τ' :=
+  subs (sub_helper arg) body.
+
+Notation "x '[[' y ']]'"
+  := (sub x y) (at level 38, left associativity) : term_scope.
+
+(*Definition sub_type_term_helper
+           {Δ : nat} {Γ : list (type Δ)} {τ : type (S Δ)}
+  : forall τ' : type Δ, Fin.t Δ -> Γ ⊢ (τ `[[τ']])%ty.*)
+
+(*Definition subs_type_term
+  : forall {Δ : nat} {Γ : list (type Δ)} {τ : type (S Δ)}
+      (σ : Fin.t Δ -> type Δ), Γ ⊢ τ -> Γ ⊢ 
+Admitted.*)
+
+Axiom bruh : forall {S : Type}, S.
+
+Equations subs_type_term
+  : forall {Δ₁ Δ₂ : nat} {Γ : list (type Δ₁)} {τ : type Δ₁}
+      (σ : Fin.t Δ₁ -> type Δ₂),
+    Γ ⊢ τ -> map (subs_type σ) Γ ⊢ subs_type σ τ :=
+  subs_type_term σ (Id _ _ h) := Id _ _ (has_map (subs_type σ) h);
+  subs_type_term σ (`λ t)%term := (`λ subs_type_term σ t)%term;
+  subs_type_term σ (t₁ ⋅ t₂)%term
+  := (subs_type_term σ t₁ ⋅ subs_type_term σ t₂)%term;
+  subs_type_term (Δ₁:=Δ₁) (Δ₂:=Δ₂) σ (TypAbs Γ τ t)%term
+  := let t' := subs_type_term (exts_type σ) t in
+     (Λ
+        eq_rect
+        _ (fun Γ => Γ ⊢ subs_type (exts_type σ) τ) t' _ _)%term;
+  subs_type_term (Δ₁:=Δ₁) (Δ₂:=Δ₂) σ (TypApp Γ τ τ' t)%term
+  := let t' := subs_type_term σ t in
+    eq_rect
+      _ (fun τ => map (subs_type σ) Γ ⊢ τ)
+      (t' ⦗subs_type σ τ'⦘)%term _ _.
+Next Obligation.
+  (* TODO. *) exact bruh.
+Defined.
+Next Obligation.
+  enough
+    ((subs_type (exts_type σ) τ `[[subs_type σ τ']])%ty
+     = subs_type σ (τ `[[ τ']])%ty); auto.
+  (* TODO. *) exact bruh.
+Defined.
+(* I would have left the above as admitted
+   but I got bizarre errors about ill-formed recursion.
+   Do YOU see any ill-formed recursive calls
+   w/o ebough arguments, b/c I don't.
+   Thanks coq for gaslighting me. *)
+
+Print Assumptions subs_type_term.
+    
+Definition sub_type_term
+{Δ : nat} {Γ : list (type Δ)} {τ : type (S Δ)}
+           (body : Γ ⊢ (∀ τ)%ty) (τ' : type Δ)
+  : Γ ⊢ (τ `[[τ']])%ty.
+Proof.
+  Fail exact (subs_type_term (sub_type_helper τ') body).
+Admitted.
+
+Notation "x '[[`' y ']]'"
+  := (sub_type_term x y) (at level 38, left associativity) : term_scope.
+
+Reserved Notation "x '-->' y" (at level 80, no associativity).
+
+Inductive bred {Δ : nat} {Γ : list (type Δ)}
+  : forall {τ : type Δ}, Γ ⊢ τ -> Γ ⊢ τ -> Prop :=
+| bred_bred (τ τ' : type Δ) (t : τ :: Γ ⊢ τ') (t' : Γ ⊢ τ) :
+  ((`λ t) ⋅ t')%term -->  (t [[ t' ]])%term
+| bred_abs (τ τ' : type Δ) (t t' : τ :: Γ ⊢ τ') :
+  t -->  t' ->
+  (`λ t)%term --> (`λ t')%term
+| bred_app_1 (τ τ' : type Δ) (t₁ t₁' : Γ ⊢ (τ → τ')%ty) (t₂ : Γ ⊢ τ) :
+  t₁ --> t₁' ->
+  (t₁ ⋅ t₂)%term --> (t₁' ⋅ t₂)%term
+| bred_app_2 (τ τ' : type Δ) (t₁ : Γ ⊢ (τ → τ')%ty) (t₂ t₂' : Γ ⊢ τ) :
+  t₂ --> t₂' ->
+  (t₁ ⋅ t₂)%term --> (t₁ ⋅ t₂')%term
+| bred_typ_abs (τ : type (S Δ)) (t t' : map (rename_type Fin.FS) Γ ⊢ τ) :
+  t -->  t' ->
+  (Λ t)%term --> (Λ t')%term
+| bred_typ_app_inner (τ : type (S Δ)) (τ' : type Δ) (t t' : Γ ⊢ (∀ τ)%ty) :
+  t -->  t' ->
+  (t ⦗τ'⦘)%term -->  (t' ⦗τ'⦘)%term
+| bred_typ_app (τ : type (S Δ)) (τ' : type Δ) (t : Γ ⊢ (∀ τ)%ty) :
+  (t ⦗τ'⦘)%term -->  (t [[` τ']])%term
+where "x '-->' y" := (bred x y).
