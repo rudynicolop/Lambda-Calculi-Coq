@@ -723,7 +723,144 @@ Notation "x '[[' y ']]'"
       (σ : Fin.t Δ -> type Δ), Γ ⊢ τ -> Γ ⊢ 
 Admitted.*)
 
-Axiom bruh : forall {S : Type}, S.
+Lemma mapply_exts_type_rename_type :
+  forall (k : nat) {Δ₁ Δ₂ : nat} (X : Fin.t (k + Δ₁))
+    (σ : Fin.t Δ₁ -> type Δ₂),
+    eq_rect_zwei
+      (T:=fun u v => Fin.t u -> type v)
+      (plus_n_Sm _ _)
+      (plus_n_Sm _ _)
+      (mapply_exts_type (S k) σ)
+      (mapply_ext_type k Fin.FS X)
+    = rename_type (mapply_ext_type k Fin.FS) (mapply_exts_type k σ X).
+Proof.
+  intro k; induction k as [| k ih]; intros Δ₁ Δ₂ X σ; cbn in *.
+  - rewrite Eqdep_dec.UIP_refl_nat
+      with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁).
+    rewrite Eqdep_dec.UIP_refl_nat
+      with (n:=S Δ₂) (x:=plus_n_Sm 0 Δ₂); cbn.
+    rewrite mapply_exts_type_equation_2.
+    rewrite mapply_exts_type_equation_1.
+    do 2 rewrite mapply_ext_type_equation_1.
+    rewrite eq_rect_zwei_equation_1.
+    rewrite exts_type_equation_2; reflexivity.
+  - pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S k) Δ₁) as h; cbn in h.
+    specialize h with (f_equal S (plus_n_Sm k Δ₁)).
+    rewrite h; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S k) Δ₂) as h; cbn in h.
+    specialize h with (f_equal S (plus_n_Sm k Δ₂)).
+    rewrite h; clear h.
+    do 2 rewrite mapply_exts_type_equation_2.
+    rewrite map_subst_map_zwei_both.
+    do 2 rewrite mapply_ext_type_equation_2.
+    depelim X.
+    + clear ih.
+      rewrite ext_type_equation_1.
+      do 2 rewrite exts_type_equation_1.
+      rewrite rename_type_equation_1.
+      rewrite ext_type_equation_1.
+      reflexivity.
+    + rewrite ext_type_equation_2.
+      do 2 rewrite exts_type_equation_2.
+      specialize ih with (X:=X) (σ:=σ).
+      rewrite mapply_exts_type_equation_2 in ih; cbn in *.
+      rewrite ih; clear ih.
+      rewrite rename_type_ext_type; reflexivity.
+Defined.
+ 
+Lemma mapply_subs_rename_type :
+  forall {Δ₁ Δ₂ : nat} (k : nat) (τ : type (k + Δ₁))
+    (σ : Fin.t Δ₁ -> type Δ₂),
+    subs_type
+      (eq_rect_zwei
+         (T:=fun u v => Fin.t u -> type v)
+         (plus_n_Sm _ _) (plus_n_Sm _ _)
+         (mapply_exts_type (S k) σ))
+      (rename_type (mapply_ext_type k Fin.FS) τ)
+    = rename_type
+        (mapply_ext_type k Fin.FS)
+        (subs_type (mapply_exts_type k σ) τ).
+Proof.
+  intros Δ₁ Δ₂ k τ; generalize dependent Δ₂.
+  depind τ; intros Δ₂ σ.
+  - rewrite rename_type_equation_1.
+    do 2 rewrite subs_type_equation_1.
+    rewrite mapply_exts_type_rename_type; reflexivity.
+  - rewrite rename_type_equation_2.
+    do 2 rewrite subs_type_equation_2.
+    rewrite rename_type_equation_2; f_equal.
+    specialize IHτ with (Δ₁:=Δ₁) (k:=S k) (τ:=τ).
+    pose proof IHτ eq_refl as ih; clear IHτ.
+    specialize ih with (Δ₂:=Δ₂) (σ:=σ).
+    pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S k) Δ₁) as h; cbn in h.
+    specialize h with (f_equal S (plus_n_Sm k Δ₁)).
+    rewrite h in ih; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S k) Δ₂) as h; cbn in h.
+    specialize h with (f_equal S (plus_n_Sm k Δ₂)).
+    rewrite h in ih; clear h.
+    do 2 rewrite mapply_ext_type_equation_2 in ih.
+    do 2 rewrite mapply_exts_type_equation_2 in ih. cbn in *.
+    rewrite <- ih; clear ih.
+    rewrite map_subst_map_zwei_both,
+      mapply_exts_type_equation_2; reflexivity.
+  - rewrite rename_type_equation_3.
+    do 2 rewrite subs_type_equation_3.
+    rewrite rename_type_equation_3; f_equal; auto.
+Defined.
+    
+Lemma subs_rename_type :
+  forall {Δ₁ Δ₂ : nat} (σ : Fin.t Δ₁ -> type Δ₂) (τ : type Δ₁),
+    subs_type (exts_type σ) (rename_type Fin.FS τ)
+    = rename_type Fin.FS (subs_type σ τ).
+Proof.
+  intros Δ₁ Δ₂ σ τ.
+  pose proof mapply_subs_rename_type 0 τ σ as h.
+  rewrite Eqdep_dec.UIP_refl_nat
+    with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁) in h.
+  rewrite Eqdep_dec.UIP_refl_nat
+    with (n:=S Δ₂) (x:=plus_n_Sm 0 Δ₂) in h; cbn in h.
+  rewrite mapply_exts_type_equation_2,
+    mapply_exts_type_equation_1 in h.
+  do 2 rewrite mapply_ext_type_equation_1 in h.
+  rewrite eq_rect_zwei_equation_1 in h.
+  assumption.
+Defined.
+  
+Lemma map_subs_rename_type :
+  forall {Δ₁ Δ₂ : nat} (Γ : list (type Δ₁))
+    (σ : Fin.t Δ₁ -> type Δ₂),
+    map (subs_type (exts_type σ)) (map (rename_type Fin.FS) Γ)
+    = map (rename_type Fin.FS) (map (subs_type σ) Γ).
+Proof.
+  intros Δ₁ Δ₂ Γ σ.
+  induction Γ as [| τ Γ ih]; cbn in *; f_equal; auto using subs_rename_type.
+Defined.
+
+Print Assumptions map_subs_rename_type.
+
+Lemma subs_ext_type :
+  forall {Δ₁ Δ₂ : nat} (σ : Fin.t Δ₁ -> type Δ₂)
+    (τ : type (S Δ₁)) (τ' : type Δ₁),
+    (subs_type (exts_type σ) τ `[[subs_type σ τ']])%ty
+    = subs_type σ (τ `[[ τ']])%ty.
+Proof.
+  unfold "_ `[[ _ ]]".
+  intros Δ₁ Δ₂ σ τ; generalize dependent Δ₂.
+  depind τ; intros Δ₂ σ τ'.
+  - do 2 rewrite subs_type_equation_1.
+    depelim t.
+    + rewrite exts_type_equation_1,sub_type_helper_equation_1,subs_type_equation_1.
+      rewrite sub_type_helper_equation_1; reflexivity.
+    + rewrite exts_type_equation_2,sub_type_helper_equation_2,subs_type_equation_1.
+      (*Search (subs_type (sub_type_helper _ _) (rename_type _ _)).*)
+      admit (* Is this true? *).
+  - do 4 rewrite subs_type_equation_2; f_equal. admit.
+  - do 4 rewrite subs_type_equation_3; f_equal; auto.
+Admitted.
 
 Equations subs_type_term
   : forall {Δ₁ Δ₂ : nat} {Γ : list (type Δ₁)} {τ : type Δ₁}
@@ -743,20 +880,13 @@ Equations subs_type_term
     eq_rect
       _ (fun τ => map (subs_type σ) Γ ⊢ τ)
       (t' ⦗subs_type σ τ'⦘)%term _ _.
-Next Obligation.
-  (* TODO. *) exact bruh.
-Defined.
+Next Obligation. apply map_subs_rename_type. Defined.
 Next Obligation.
   enough
     ((subs_type (exts_type σ) τ `[[subs_type σ τ']])%ty
      = subs_type σ (τ `[[ τ']])%ty); auto.
-  (* TODO. *) exact bruh.
+  apply subs_ext_type.
 Defined.
-(* I would have left the above as admitted
-   but I got bizarre errors about ill-formed recursion.
-   Do YOU see any ill-formed recursive calls
-   w/o ebough arguments, b/c I don't.
-   Thanks coq for gaslighting me. *)
 
 Print Assumptions subs_type_term.
     
@@ -765,6 +895,9 @@ Definition sub_type_term
            (body : Γ ⊢ (∀ τ)%ty) (τ' : type Δ)
   : Γ ⊢ (τ `[[τ']])%ty.
 Proof.
+  unfold "_ `[[ _ ]]".
+  pose proof @subs_type_term as h.
+  Fail refine (subs_type_term _ body).
   Fail exact (subs_type_term (sub_type_helper τ') body).
 Admitted.
 
