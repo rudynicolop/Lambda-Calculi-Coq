@@ -842,6 +842,181 @@ Defined.
 
 Print Assumptions map_subs_rename_type.
 
+(*Equations Derive Signature NoConfusion NoConfusionHom for Fin.t.*)
+
+Lemma mapply_exts_type_idem :
+  forall {Δ₁ Δ₂ : nat} (k : nat) (X : Fin.t (k + Δ₂))
+    (τ' : type Δ₁) (σ : Fin.t Δ₁ -> type Δ₂),
+    mapply_exts_type k (sub_type_helper (subs_type σ τ')) (mapply_ext_type k Fin.FS X) = X.
+Proof.
+  intros Δ₁ Δ₂ k;
+    generalize dependent Δ₂;
+    generalize dependent Δ₁;
+    induction k as [| k ih];
+    intros Δ₁ Δ₂ X τ' σ.
+  - rewrite mapply_exts_type_equation_1,
+      mapply_ext_type_equation_1,
+      sub_type_helper_equation_2; reflexivity.
+  - rewrite mapply_exts_type_equation_2,
+      mapply_ext_type_equation_2.
+    depelim X.
+    + rewrite ext_type_equation_1,
+        exts_type_equation_1; reflexivity.
+    + rewrite ext_type_equation_2,
+        exts_type_equation_2.
+      rewrite ih, rename_type_equation_1; reflexivity.
+Defined.
+
+Lemma mapply_exts_type_subs_type_rename_type_idem :
+  forall {Δ₁ Δ₂ : nat} (k : nat) (τ : type (k + Δ₂))
+    (τ' : type Δ₁) (σ : Fin.t Δ₁ -> type Δ₂),
+    subs_type
+      (mapply_exts_type k (sub_type_helper (subs_type σ τ')))
+      (rename_type (mapply_ext_type k Fin.FS) τ) = τ.
+Proof.
+  intros Δ₁ Δ₂ k τ; generalize dependent Δ₁;
+    depind τ; intros Δ₁ τ' σ.
+  - rewrite rename_type_equation_1,
+      subs_type_equation_1, mapply_exts_type_idem;
+      reflexivity.
+  - specialize IHτ with (Δ₂:=Δ₂) (k:=S k) (τ:=τ) (Δ₁:=Δ₁) (τ':=τ') (σ:=σ).
+    pose proof IHτ eq_refl as ih; clear IHτ.
+    rewrite rename_type_equation_2,
+      subs_type_equation_2; f_equal.
+    rewrite mapply_exts_type_equation_2,
+      mapply_ext_type_equation_2 in ih.
+    cbn in *; assumption.
+  - rewrite rename_type_equation_3,
+      subs_type_equation_3; f_equal; auto.
+Defined.
+
+Lemma subs_type_rename_type_idem :
+  forall {Δ₁ Δ₂ : nat} (τ : type Δ₂) (σ : Fin.t Δ₁ -> type Δ₂) (τ' : type Δ₁),
+    subs_type (sub_type_helper (subs_type σ τ')) (rename_type Fin.FS τ) = τ.
+Proof.
+  intros Δ₁ Δ₂ τ σ τ'.
+  pose proof
+       mapply_exts_type_subs_type_rename_type_idem
+       0 τ τ' σ as h.
+  rewrite mapply_exts_type_equation_1,
+    mapply_ext_type_equation_1 in h;
+    assumption.
+Defined.
+
+Lemma subs_type_mapply_exts_type_eq_rect_zwei :
+  forall (k : nat) {Δ₁ Δ₂ : nat} (X : Fin.t (S k + Δ₁))
+    (τ' : type Δ₁) (σ : Fin.t Δ₁ -> type Δ₂),
+    subs_type
+      (eq_rect_zwei
+         (T:=fun u v => Fin.t u -> type v)
+         (eq_sym (plus_n_Sm k Δ₂)) eq_refl
+         (mapply_exts_type k (sub_type_helper (subs_type σ τ'))))
+      (mapply_exts_type (S k) σ X)
+    = subs_type
+        (mapply_exts_type k σ)
+        (eq_rect_zwei
+           (T:=fun u v => Fin.t u -> type v)
+           (eq_sym (plus_n_Sm k Δ₁)) eq_refl
+           (mapply_exts_type k (sub_type_helper τ')) X).
+Proof.
+  intro k; induction k as [| k ih];
+    intros Δ₁ Δ₂ X τ' σ.
+  - rewrite Eqdep_dec.UIP_refl_nat
+      with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁).
+    rewrite Eqdep_dec.UIP_refl_nat
+      with (n:=S Δ₂) (x:=plus_n_Sm 0 Δ₂); cbn.
+    rewrite mapply_exts_type_equation_2.
+    do 3 rewrite mapply_exts_type_equation_1.
+    do 2 rewrite eq_rect_zwei_equation_1.
+    depelim X.
+    + rewrite exts_type_equation_1,
+        subs_type_equation_1.
+      do 2 rewrite sub_type_helper_equation_1; reflexivity.
+    + rewrite exts_type_equation_2,
+        sub_type_helper_equation_2,
+        subs_type_equation_1,
+        subs_type_rename_type_idem; reflexivity.
+  - pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S k) Δ₁) as h; cbn in h.
+    specialize h with (f_equal S (plus_n_Sm k Δ₁)).
+    rewrite h; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S k) Δ₂) as h; cbn in h.
+    specialize h with (f_equal S (plus_n_Sm k Δ₂)).
+    rewrite h; clear h; cbn in *.
+    do 2 rewrite eq_sym_map_distr.
+    Set Printing Implicit.
+    pose proof Peano_dec.UIP_nat
+         _ _ (@eq_refl _ (S (k + Δ₂))) (f_equal S eq_refl) as h.
+    rewrite h; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (@eq_refl _ (S (k + Δ₁))) (f_equal S eq_refl) as h.
+    rewrite h; clear h.
+    Unset Printing Implicit.
+    do 4 rewrite mapply_exts_type_equation_2.
+    do 2 rewrite map_subst_map_zwei_both.
+    depelim X.
+    + do 2 rewrite exts_type_equation_1.
+      do 2 rewrite subs_type_equation_1.
+      do 2 rewrite exts_type_equation_1; reflexivity.
+    + do 2 rewrite exts_type_equation_2.
+      specialize ih with Δ₁ Δ₂ X τ' σ.
+      do 2 rewrite subs_rename_type; f_equal.
+      rewrite <- ih; clear ih.
+      rewrite mapply_exts_type_equation_2; reflexivity.
+Defined.
+    
+Lemma mapply_exts_type_subs_mapply_ext_type :
+      forall {Δ₁ Δ₂ : nat} (k : nat) (τ : type (S k + Δ₁))
+        (τ' : type Δ₁) (σ : Fin.t Δ₁ -> type Δ₂),
+        subs_type
+          (eq_rect_zwei
+             (T:=fun u v => Fin.t u -> type v)
+             (eq_sym (plus_n_Sm _ _)) eq_refl
+             (mapply_exts_type k (sub_type_helper (subs_type σ τ'))))
+          (subs_type (mapply_exts_type (S k) σ) τ)
+        = subs_type
+            (mapply_exts_type k σ)
+            (subs_type
+               (eq_rect_zwei
+                  (T:=fun u v => Fin.t u -> type v)
+                  (eq_sym (plus_n_Sm _ _)) eq_refl
+                  (mapply_exts_type k (sub_type_helper τ')))
+               τ).
+Proof.
+  intros Δ₁ Δ₂ k τ τ' σ; depind τ.
+  - do 2 rewrite subs_type_equation_1.
+    rewrite subs_type_mapply_exts_type_eq_rect_zwei;
+      reflexivity.
+  - do 4 rewrite subs_type_equation_2; f_equal.
+    specialize IHτ with
+      (Δ₁:=Δ₁) (Δ₂:=Δ₂) (k:=S k)
+      (τ:=τ) (τ':=τ') (σ:=σ).
+    pose proof IHτ eq_refl as ih; clear IHτ.
+    pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S k) Δ₁) as h; cbn in h.
+    specialize h with (f_equal S (plus_n_Sm k Δ₁)).
+    rewrite h in ih; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (plus_n_Sm (S k) Δ₂) as h; cbn in h.
+    specialize h with (f_equal S (plus_n_Sm k Δ₂)).
+    rewrite h in ih; clear h; cbn in *.
+    do 2 rewrite eq_sym_map_distr in ih.
+    Set Printing Implicit.
+    pose proof Peano_dec.UIP_nat
+         _ _ (@eq_refl _ (S (k + Δ₂))) (f_equal S eq_refl) as h.
+    rewrite h in ih; clear h.
+    pose proof Peano_dec.UIP_nat
+         _ _ (@eq_refl _ (S (k + Δ₁))) (f_equal S eq_refl) as h.
+    rewrite h in ih; clear h.
+    Unset Printing Implicit.
+    do 4 rewrite mapply_exts_type_equation_2 in ih.
+    do 2 rewrite map_subst_map_zwei_both in ih.
+    rewrite <- ih; clear ih.
+    rewrite mapply_exts_type_equation_2;reflexivity.
+  - do 4 rewrite subs_type_equation_3; f_equal; eauto.
+Defined.
+
 Lemma subs_ext_type :
   forall {Δ₁ Δ₂ : nat} (σ : Fin.t Δ₁ -> type Δ₂)
     (τ : type (S Δ₁)) (τ' : type Δ₁),
@@ -849,18 +1024,19 @@ Lemma subs_ext_type :
     = subs_type σ (τ `[[ τ']])%ty.
 Proof.
   unfold "_ `[[ _ ]]".
-  intros Δ₁ Δ₂ σ τ; generalize dependent Δ₂.
-  depind τ; intros Δ₂ σ τ'.
-  - do 2 rewrite subs_type_equation_1.
-    depelim t.
-    + rewrite exts_type_equation_1,sub_type_helper_equation_1,subs_type_equation_1.
-      rewrite sub_type_helper_equation_1; reflexivity.
-    + rewrite exts_type_equation_2,sub_type_helper_equation_2,subs_type_equation_1.
-      (*Search (subs_type (sub_type_helper _ _) (rename_type _ _)).*)
-      admit (* Is this true? *).
-  - do 4 rewrite subs_type_equation_2; f_equal. admit.
-  - do 4 rewrite subs_type_equation_3; f_equal; auto.
-Admitted.
+  intros Δ₁ Δ₂ σ τ τ'.
+  pose proof
+       mapply_exts_type_subs_mapply_ext_type
+       0 τ τ' σ as h.
+  rewrite Eqdep_dec.UIP_refl_nat
+    with (n:=S Δ₁) (x:=plus_n_Sm 0 Δ₁) in h.
+  rewrite Eqdep_dec.UIP_refl_nat
+    with (n:=S Δ₂) (x:=plus_n_Sm 0 Δ₂) in h; cbn in h.
+  rewrite mapply_exts_type_equation_2 in h.
+  do 3 rewrite mapply_exts_type_equation_1 in h.
+  do 2 rewrite eq_rect_zwei_equation_1 in h.
+  assumption.
+Defined.
 
 Equations subs_type_term
   : forall {Δ₁ Δ₂ : nat} {Γ : list (type Δ₁)} {τ : type Δ₁}
