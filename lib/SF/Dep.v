@@ -133,11 +133,6 @@ Equations mapply_ext_type : forall {Δ₁ Δ₂ : nat} (m : nat),
   mapply_ext_type  O    ρ := ρ;
   mapply_ext_type (S k) ρ := ext_type (mapply_ext_type k ρ).
 
-Fail Lemma mapply_ext_type_eq
-  : forall {Δ₁ Δ₂ : nat} (m : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (X : Fin.t (m + Δ₁)),
-    ext_type (mapply_ext_type m ρ) (mapply_ext_type m Fin.FS X)
-    = mapply_ext_type m Fin.FS (mapply_ext_type m ρ X).
-
 Lemma mapply_ext_type_eq
   : forall {Δ₁ Δ₂ : nat} (m : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (X : Fin.t (m + Δ₁)),
     ext_type
@@ -334,30 +329,6 @@ Equations mapply_exts_type : forall {Δ₁ Δ₂ : nat} (m : nat),
     (Fin.t Δ₁ -> type Δ₂) -> Fin.t (m + Δ₁) -> type (m + Δ₂) :=
   mapply_exts_type  O    σ := σ;
   mapply_exts_type (S k) σ := exts_type (mapply_exts_type k σ).
-
-Fail Lemma mapply_exts_type_sub_type_helper :
-  forall {Δ₁ Δ₂ : nat} (m : nat)
-    (ρ : Fin.t Δ₁ -> Fin.t Δ₂)
-    (X : Fin.t (S (m + Δ₁))) (τ : type Δ₁),
-    mapply_exts_type
-      m (sub_type_helper (rename_type ρ τ))
-      (ext_type (mapply_ext_type m ρ) X)
-    = rename_type
-        (mapply_ext_type m ρ)
-        (mapply_exts_type m (sub_type_helper τ) X).
-
-Fail Lemma mapply_subs_type_exts_type :
-  forall {Δ₁ Δ₂ : nat} (m : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂)
-    (τ : type (S m + Δ₁)) (τ' : type Δ₁),
-    subs_type
-      (mapply_exts_type
-         m (sub_type_helper (rename_type ρ τ')))
-      (rename_type
-         (mapply_ext_type (S m) ρ) τ)
-    = rename_type
-        (mapply_ext_type m ρ)
-        (subs_type
-           (mapply_exts_type m (sub_type_helper τ')) τ).
 
 Lemma mapply_subs_type_helper :
   forall (m : nat) {Δ₁ Δ₂ : nat} (ρ : Fin.t Δ₁ -> Fin.t Δ₂)
@@ -1113,3 +1084,52 @@ Inductive bred {Δ : nat} {Γ : list (type Δ)}
 where "x '-->' y" := (bred x y).
 
 Print Assumptions bred.
+
+Derive Signature for bred.
+
+Variant value {Δ : nat} {Γ : list (type Δ)}
+  : forall {τ : type Δ}, Γ ⊢ τ -> Prop :=
+  | Abs_value (τ τ' : type Δ) (t : τ :: Γ ⊢ τ') :
+    value (`λ t)%term
+  | TypAbs_value (τ : type (S Δ))
+                 (t : map (rename_type Fin.FS) Γ ⊢ τ) :
+    value (Λ t)%term.
+
+Derive Signature for value.
+
+Lemma canonical_abs :
+  forall {Δ : nat} {τ τ' : type Δ} (t : [] ⊢ (τ → τ')%ty),
+    value t ->
+    exists body : [τ] ⊢ τ', t = (`λ body)%term.
+Proof.
+  intros Δ τ τ' t v.
+  depelim v; eauto.
+Qed.
+
+Lemma canonical_typabs :
+  forall {Δ : nat} {Γ : list (type Δ)}
+    {τ : type (S Δ)} (t : Γ ⊢ (∀ τ)%ty),
+    value t ->
+    exists body, t = (Λ body)%term.
+Proof.
+  intros Δ Γ τ t v; depelim v; eauto.
+Qed.
+
+Local Hint Constructors bred : core.
+Local Hint Constructors value : core.
+
+Theorem Progress :
+  forall {Δ : nat} {τ : type Δ} (t : [] ⊢ τ),
+    value t \/ exists t', t -->  t'.
+Proof.
+  intros Δ τ t; depind t; auto.
+  - inv h.
+  - right.
+    destruct IHt1 as [v1 | (t1' & ih1)]; eauto.
+    pose proof canonical_abs t1 v1
+      as [t1' t1'eq]; subst; eauto.
+  - right.
+    destruct IHt as [v | (t' & ih)]; eauto.
+    pose proof canonical_typabs t v
+      as [t' t'eq]; subst; eauto.
+Qed.
