@@ -842,18 +842,15 @@ Defined.
 
 Print Assumptions map_subs_rename_type.
 
-(*Equations Derive Signature NoConfusion NoConfusionHom for Fin.t.*)
-
 Lemma mapply_exts_type_idem :
-  forall {Δ₁ Δ₂ : nat} (k : nat) (X : Fin.t (k + Δ₂))
-    (τ' : type Δ₁) (σ : Fin.t Δ₁ -> type Δ₂),
-    mapply_exts_type k (sub_type_helper (subs_type σ τ')) (mapply_ext_type k Fin.FS X) = X.
+  forall (k : nat) {Δ : nat} (X : Fin.t (k + Δ)) (τ' : type Δ),
+    mapply_exts_type
+      k (sub_type_helper τ')
+      (mapply_ext_type k Fin.FS X) = X.
 Proof.
-  intros Δ₁ Δ₂ k;
-    generalize dependent Δ₂;
-    generalize dependent Δ₁;
+  intro k;
     induction k as [| k ih];
-    intros Δ₁ Δ₂ X τ' σ.
+    intros Δ X τ'.
   - rewrite mapply_exts_type_equation_1,
       mapply_ext_type_equation_1,
       sub_type_helper_equation_2; reflexivity.
@@ -868,18 +865,17 @@ Proof.
 Defined.
 
 Lemma mapply_exts_type_subs_type_rename_type_idem :
-  forall {Δ₁ Δ₂ : nat} (k : nat) (τ : type (k + Δ₂))
-    (τ' : type Δ₁) (σ : Fin.t Δ₁ -> type Δ₂),
+  forall {Δ : nat} (k : nat) (τ : type (k + Δ)) (τ' : type Δ),
     subs_type
-      (mapply_exts_type k (sub_type_helper (subs_type σ τ')))
+      (mapply_exts_type k (sub_type_helper τ'))
       (rename_type (mapply_ext_type k Fin.FS) τ) = τ.
 Proof.
-  intros Δ₁ Δ₂ k τ; generalize dependent Δ₁;
-    depind τ; intros Δ₁ τ' σ.
+  intros Δ k τ τ'; depind τ.
   - rewrite rename_type_equation_1,
-      subs_type_equation_1, mapply_exts_type_idem;
+      subs_type_equation_1,
+      mapply_exts_type_idem;
       reflexivity.
-  - specialize IHτ with (Δ₂:=Δ₂) (k:=S k) (τ:=τ) (Δ₁:=Δ₁) (τ':=τ') (σ:=σ).
+  - specialize IHτ with (Δ:=Δ0) (k:=S k) (τ:=τ) (τ':=τ').
     pose proof IHτ eq_refl as ih; clear IHτ.
     rewrite rename_type_equation_2,
       subs_type_equation_2; f_equal.
@@ -891,16 +887,26 @@ Proof.
 Defined.
 
 Lemma subs_type_rename_type_idem :
-  forall {Δ₁ Δ₂ : nat} (τ : type Δ₂) (σ : Fin.t Δ₁ -> type Δ₂) (τ' : type Δ₁),
-    subs_type (sub_type_helper (subs_type σ τ')) (rename_type Fin.FS τ) = τ.
+  forall {Δ : nat} (τ τ' : type Δ),
+    subs_type (sub_type_helper τ') (rename_type Fin.FS τ) = τ.
 Proof.
-  intros Δ₁ Δ₂ τ σ τ'.
+  intros Δ τ τ'.
   pose proof
        mapply_exts_type_subs_type_rename_type_idem
-       0 τ τ' σ as h.
+       0 τ τ' as h.
   rewrite mapply_exts_type_equation_1,
     mapply_ext_type_equation_1 in h;
     assumption.
+Defined.
+
+Lemma map_subs_type_rename_type_idem :
+  forall {Δ : nat} (τ' : type Δ) (Γ : list (type Δ)),
+    map
+      (subs_type (sub_type_helper τ'))
+      (map (rename_type Fin.FS) Γ) = Γ.
+Proof.
+  intros Δ τ' Γ; induction Γ as [| τ Γ ih]; cbn;
+    f_equal; auto using subs_type_rename_type_idem.
 Defined.
 
 Lemma subs_type_mapply_exts_type_eq_rect_zwei :
@@ -1067,15 +1073,15 @@ Defined.
 Print Assumptions subs_type_term.
     
 Definition sub_type_term
-{Δ : nat} {Γ : list (type Δ)} {τ : type (S Δ)}
-           (body : Γ ⊢ (∀ τ)%ty) (τ' : type Δ)
-  : Γ ⊢ (τ `[[τ']])%ty.
-Proof.
-  unfold "_ `[[ _ ]]".
-  pose proof @subs_type_term as h.
-  Fail refine (subs_type_term _ body).
-  Fail exact (subs_type_term (sub_type_helper τ') body).
-Admitted.
+           {Δ : nat} {Γ : list (type Δ)} {τ : type (S Δ)}
+           (body : map (rename_type Fin.FS) Γ ⊢ τ) (τ' : type Δ)
+  : Γ ⊢ (τ `[[τ']])%ty :=
+  eq_rect
+    _ (fun Γ => Γ ⊢ τ `[[ τ' ]]%ty)
+    (subs_type_term (sub_type_helper τ') body) _
+    (map_subs_type_rename_type_idem τ' Γ).
+
+Print Assumptions sub_type_term.
 
 Notation "x '[[`' y ']]'"
   := (sub_type_term x y) (at level 38, left associativity) : term_scope.
@@ -1101,6 +1107,9 @@ Inductive bred {Δ : nat} {Γ : list (type Δ)}
 | bred_typ_app_inner (τ : type (S Δ)) (τ' : type Δ) (t t' : Γ ⊢ (∀ τ)%ty) :
   t -->  t' ->
   (t ⦗τ'⦘)%term -->  (t' ⦗τ'⦘)%term
-| bred_typ_app (τ : type (S Δ)) (τ' : type Δ) (t : Γ ⊢ (∀ τ)%ty) :
-  (t ⦗τ'⦘)%term -->  (t [[` τ']])%term
+| bred_typ_app (τ : type (S Δ)) (τ' : type Δ)
+               (t : map (rename_type Fin.FS) Γ ⊢ τ) :
+  ((Λ t) ⦗τ'⦘)%term -->  (t [[` τ']])%term
 where "x '-->' y" := (bred x y).
+
+Print Assumptions bred.
