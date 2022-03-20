@@ -6,6 +6,7 @@ Lambda-Calculi implementations &amp; proofs in Coq.
 
 - Church-Rossner Confluence of beta-reductions for the untyped lambda calculus.
 - Progress, preservation, & strong-normalization of the simply-typed lambda calculus.
+- Preservation & progress of System F.
 
 ## Sources
 
