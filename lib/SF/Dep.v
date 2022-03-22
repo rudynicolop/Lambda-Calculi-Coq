@@ -589,7 +589,7 @@ Equations Rename : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
     (forall {τ : type Δ}, Has τ Γ₁ -> Has τ Γ₂) ->
     forall {τ : type Δ}, Γ₁ ⊢ τ -> Γ₂ ⊢ τ :=
   Rename ρ (Id _ _ has) := Id _ _ (ρ _ has);
-  Rename ρ (λ σ ⇒ t)%term := (λ σ ⇒ Rename (fun τ => ext_has ρ (b:=σ) (a:=τ)) t)%term;
+  Rename ρ (λ σ ⇒ t)%term := (λ σ ⇒ Rename (ext_has ρ σ) t)%term;
   Rename ρ (t₁ ⋅ t₂)%term := (Rename ρ t₁ ⋅ Rename ρ t₂)%term;
   Rename ρ (Λ t)%term     := (Λ Rename (ext_Renamer ρ) t)%term;
   Rename ρ (t ⦗ τ ⦘)%term := ((Rename ρ t) ⦗ τ ⦘)%term.

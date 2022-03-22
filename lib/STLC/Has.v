@@ -43,7 +43,7 @@ Equations
   {Γ Δ} :
   (forall τ, Has τ Γ -> Has τ Δ) -> forall {σ}, Γ ⊢ σ -> Δ ⊢ σ :=
   Rename f (Id _ _ h)   := Id _ _ (f _ h);
-  Rename f (λ ρ ⇒ t')%term := (`λ Rename (@ext_has _ _ _ f ρ) t')%term;
+  Rename f (λ ρ ⇒ t')%term := (`λ Rename (ext_has f ρ) t')%term;
   Rename f (t₁ ⋅ t₂)%term  := (Rename f t₁ ⋅ Rename f t₂)%term.
 
 Equations Exts : forall {Γ Δ},
@@ -51,6 +51,12 @@ Equations Exts : forall {Γ Δ},
     forall ρ σ, Has σ (ρ :: Γ) -> ρ :: Δ ⊢ σ :=
   Exts f _ _ HasO := Id _ _ HasO;
   Exts f _ _ (HasS hs) := Rename (fun τ => @HasS _ τ _ _) (f _ hs).
+
+Equations Exts_app_l : forall {Γ Δ},
+    (forall τ, Has τ Γ -> Δ ⊢ τ) ->
+    forall τs τ, Has τ (τs ++ Γ) -> (τs ++ Δ) ⊢ τ :=
+  Exts_app_l σ [] := σ;
+  Exts_app_l σ (α :: τs) := Exts (Exts_app_l σ τs) α.
 
 Equations
   subs : forall {Γ Δ},
@@ -162,7 +168,33 @@ Section HaltsSN.
   Qed.
 End HaltsSN.
 
-Lemma subs_sub :
+Lemma subs_subs_distr :
+  forall {Γ Δ} (σ : forall τ, Has τ Γ -> Δ ⊢ τ)
+    τs {τ τ'} (t : (τs ++ τ :: Γ) ⊢ τ') (t' : Γ ⊢ τ),
+    subs
+      (Exts_app_l σ τs)
+      (subs (Exts_app_l (sub_helper t') τs) t)
+    = subs
+        (Exts_app_l (sub_helper (subs σ t')) τs)
+        (eq_rect
+           _ (fun Γ => Γ ⊢ τ')
+           (subs
+              (Exts_app_l σ (τs ++ [τ]))
+              (eq_rect
+                 _ (fun Γ => Γ ⊢ τ')
+                 t _ (app_assoc _ [τ] _)))
+           _ (eq_sym (app_assoc _ _ _))).
+Proof.
+  intros Γ Δ σ τs τ τ' t t'.
+  depind t.
+  - rewrite subs_equation_1. admit.
+  - do 2 rewrite subs_equation_2.
+    pose proof IHt _ _ σ (τ :: τs) _ _ _ eq_refl t' as ih; clear IHt.
+    do 2 rewrite Exts_app_l_equation_2 in ih.
+    cbn in *; rewrite ih; clear ih.
+Admitted.
+
+Lemma subs_sub_distr :
   forall {Γ Δ} (σ : forall τ, Has τ Γ -> Δ ⊢ τ)
     {τ τ'} (t₁ : τ :: Γ ⊢ τ') (t₂ : Γ ⊢ τ),
     subs σ (t₁ [[t₂]])%term = (subs (Exts σ τ) t₁ [[subs σ t₂]])%term.
@@ -189,7 +221,7 @@ Proof.
   - rewrite subs_equation_3,subs_equation_2.
     assert (H:subs σ (t₁ [[t₂]])%term
               = (subs (Exts σ τ) t₁ [[subs σ t₂]])%term)
-      by auto using subs_sub.
+      by auto using subs_sub_distr.
     rewrite H; auto.
   - do 2 rewrite subs_equation_2; auto.
   - do 2 rewrite subs_equation_3; auto.

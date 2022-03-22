@@ -38,10 +38,16 @@ Section List.
     - f_equal.*)
 
   Equations ext_has : forall {Γ Δ},
-      (forall {a : A}, Has a Γ -> Has a Δ) ->
-      forall {b a : A}, Has a (b :: Γ) -> Has a (b :: Δ) :=
-    ext_has ρ HasO := HasO;
-    ext_has ρ (HasS h) := HasS (ρ _ h).
+      (forall a : A, Has a Γ -> Has a Δ) ->
+      forall b a : A, Has a (b :: Γ) -> Has a (b :: Δ) :=
+    ext_has ρ _ _ HasO := HasO;
+    ext_has ρ _ _ (HasS h) := HasS (ρ _ h).
+
+  Equations ext_has_app_l : forall {Γ Δ},
+      (forall a : A, Has a Γ -> Has a Δ) ->
+      forall (l : list A) (a : A), Has a (l ++ Γ) -> Has a (l ++ Δ) :=
+    ext_has_app_l ρ []:= ρ;
+    ext_has_app_l ρ (h :: t) := ext_has (ext_has_app_l ρ t) h.
   
   Definition Has_nth_error : forall {Γ a},
       Has a Γ -> { n | nth_error Γ n = Some a}.
