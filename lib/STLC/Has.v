@@ -168,6 +168,88 @@ Section HaltsSN.
   Qed.
 End HaltsSN.
 
+Lemma Exts_app_l_idem :
+  forall τs {Γ τ τ'} (x : Has τ (τs ++ Γ)) (t' : Γ ⊢ τ'),
+    Exts_app_l
+      (sub_helper t')
+      τs _
+      (ext_has_app_l
+         (fun α : type => HasS (a:=α))
+         τs _ x) = Id _ _ x.
+Proof.
+  intros τs Γ τ τ' x t'; depind τs; cbn.
+  - rewrite ext_has_app_l_equation_1,
+      Exts_app_l_equation_1,
+      sub_helper_equation_2; reflexivity.
+  - rewrite ext_has_app_l_equation_2,
+      Exts_app_l_equation_2.
+    depelim x.
+    + rewrite ext_has_equation_1,
+        Exts_equation_1; reflexivity.
+    + rewrite ext_has_equation_2,
+        Exts_equation_2, IHτs,
+        Rename_equation_1; reflexivity.
+Qed.
+  
+Lemma subs_Rename_app_l_idem :
+  forall {Γ τ τ'} τs (t : τs ++ Γ ⊢ τ) (t' : Γ ⊢ τ'),
+    subs
+      (Exts_app_l (sub_helper t') τs)
+      (Rename (ext_has_app_l (fun α => HasS (a:=α)) τs) t) = t.
+Proof.
+  intros Γ τ τ' τs t; depind t; intros t'.
+  - rewrite Rename_equation_1,
+      subs_equation_1, Exts_app_l_idem;
+      reflexivity.
+  - rewrite Rename_equation_2,subs_equation_2; f_equal.
+    pose proof IHt _ _ _ (τ :: τs) t eq_refl t' as ih; clear IHt.
+    rewrite ext_has_app_l_equation_2,
+      Exts_app_l_equation_2 in ih. assumption.
+  - rewrite Rename_equation_3,subs_equation_3; f_equal; auto.
+Qed.
+
+Lemma subs_Rename_idem : forall {Γ τ τ'} (t : Γ ⊢ τ) (t' : Γ ⊢ τ'),
+    subs (sub_helper t') (Rename (fun τ' => HasS (a:=τ')) t) = t.
+Proof.
+  intros Γ τ τ' t t'.
+  pose proof subs_Rename_app_l_idem [] t t' as h.
+  rewrite Exts_app_l_equation_1,
+    ext_has_app_l_equation_1 in h; assumption.
+Qed.
+
+Fail Lemma subs_Rename_comm :
+  forall {Γ Δ} (σ : forall τ, Has τ Γ -> Δ ⊢ τ) τs ρs {τ} τ' (t : τs ++ Γ ⊢ τ),
+    subs
+      (Exts_app_l σ (τ' :: ρs))
+      (Rename
+         (ext_has_app_l (fun α => HasS (a:=α)) τs) t)
+    = Rename
+        (ext_has_app_l (fun α => HasS (a:=α)) ρs)
+        (subs (Exts_app_l σ τs) t).
+
+Lemma subs_Rename_comm :
+  forall {Γ Δ} (σ : forall τ, Has τ Γ -> Δ ⊢ τ) τs {τ} τ' (t : τs ++ Γ ⊢ τ),
+    subs
+      (Exts_app_l σ (τ' :: τs))
+      (Rename
+         ((*ext_has_app_l*) (fun α => HasS (a:=α)) (*ρs*)) t)
+    = Rename
+        ((*ext_has_app_l*) (fun α => HasS (a:=α)) (*ρs*))
+        (subs (Exts_app_l σ τs) t).
+Proof.
+  intros Γ Δ σ τs τ τ' t; depind t.
+  - rewrite Rename_equation_1,
+      Exts_app_l_equation_2.
+    do 2 rewrite subs_equation_1.
+    rewrite Exts_equation_2; reflexivity.
+  - rewrite Rename_equation_2.
+    do 2 rewrite subs_equation_2.
+    rewrite Rename_equation_2; f_equal.
+    rewrite Exts_app_l_equation_2.
+    pose proof IHt _ _ σ (τ :: τs) _ τ' _ eq_refl as ih; clear IHt.
+    do 2 rewrite Exts_app_l_equation_2 in ih.
+Admitted.
+
 Lemma subs_Exts_app_l :
   forall {Γ Δ} (σ : forall τ, Has τ Γ -> Δ ⊢ τ)
     τs {τ τ'} (x : Has τ' (τs ++ τ :: Γ)) (t' : Γ ⊢ τ),
@@ -198,8 +280,8 @@ Proof.
     + rewrite Exts_equation_1,subs_equation_1.
       do 2 rewrite sub_helper_equation_1; reflexivity.
     + rewrite Exts_equation_2,sub_helper_equation_2,
-        subs_equation_1.
-      admit (* TODO: helper lemma. *).
+        subs_equation_1, subs_Rename_idem.
+      reflexivity.
   - do 4 rewrite Exts_app_l_equation_2.
     pose proof type_eqdec as ted; unfold dec_eq in ted.
     pose proof list_eq_dec ted as led.
@@ -223,7 +305,18 @@ Proof.
       do 2 rewrite Exts_equation_1.
       reflexivity.
     + do 2 rewrite Exts_equation_2.
-      Fail rewrite <- IHτs.
+      pose proof IHτs _ _ x t' as ih; clear IHτs.
+      assert (H:
+               subs
+                 (Exts (Exts_app_l σ τs) a)
+                 (Rename
+                    (fun α => HasS (a:=α))
+                    (Exts_app_l (sub_helper t') τs _ x))
+               = Rename
+                   (fun α => HasS (a:=α))
+                   (subs (Exts_app_l σ τs) (Exts_app_l (sub_helper t') τs τ' x))) by admit.
+      rewrite H,ih. Check Exts_app_l (sub_helper t') τs _ x.
+      
       admit (* TODO: helper lemma. *).
 Admitted.
     
@@ -313,3 +406,5 @@ Lemma sub_bred : forall {Γ τ τ'} (bdy bdy' : τ :: Γ ⊢ τ'),
 Proof.
   eauto using subs_bred.
 Qed.
+
+Print Assumptions sub_bred.
