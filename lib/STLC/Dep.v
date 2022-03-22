@@ -1,4 +1,4 @@
-From Lambda Require Export ListUtil STLC.SimpleTypes.
+From Lambda Require Export Util.Lists STLC.SimpleTypes.
 
 (** * Simply Typed Lambda Calculus. *)
 

@@ -1,4 +1,4 @@
-Require Import Lambda.Util.
+Require Import Lambda.Util.Basic.
 
 (** * De Bruijn Syntax of Terms *)
 

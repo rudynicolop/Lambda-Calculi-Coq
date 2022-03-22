@@ -1,4 +1,4 @@
-Require Export Lambda.Util.
+Require Export Lambda.Util.Basic.
 From Equations Require Export Equations.
 
 (** * System F. *)

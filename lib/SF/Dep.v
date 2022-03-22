@@ -1,4 +1,4 @@
-From Lambda Require Export ListUtil.
+From Lambda.Util Require Export Lists EqRect.
 Require Coq.Vectors.Fin.
 
 (** * System F *)
@@ -15,51 +15,7 @@ Proof.
   destruct h; reflexivity.
 Defined.
 
-Module FIN.
-  Export Coq.Vectors.Fin.
-
-  Derive Signature for t.
-  Equations Derive NoConfusion NoConfusionHom Subterm for t.
-
-  Equations nat_of {n : nat} : t n -> nat :=
-  | F1 := 0
-  | FS f := S (nat_of f).
-
-  Lemma nat_of_inj : forall (k : nat) (m n : t k),
-      nat_of m = nat_of n -> m = n.
-    intros k m; funelim (nat_of m);
-      intros n h; funelim (nat_of n);
-      cbn in *; try reflexivity.
-    - rewrite nat_of_equation_1,nat_of_equation_2 in h.
-      discriminate.
-    - rewrite nat_of_equation_1,nat_of_equation_2 in h.
-      discriminate.
-    - do 2 rewrite nat_of_equation_2 in h.
-      injection h as h'.
-      apply H0 in h'; subst; reflexivity.
-  Defined.
-
-  Definition LT {k : nat} (m n : t k) : Prop :=
-    nat_of m < nat_of n.
-
-  Definition LT_eq_LT_dec {k : nat} (m n : t k)
-    : {LT m n} + {m = n} + {LT n m} :=
-    match lt_eq_lt_dec (nat_of m) (nat_of n) with
-    | inleft (left h) => inleft (left h)
-    | inleft (right h) => inleft (right (nat_of_inj _ _ _ h))
-    | inright h => inright h
-    end.
-
-  (** [pred] of [m] . *)
-  Equations PRED : forall {k : nat} {m n : t (S k)}, LT n m -> t k :=
-    PRED (m := FS f) _ := f;
-    PRED (k:=k) (m := F1) h := _.
-  Next Obligation.
-    unfold LT in h.
-    rewrite nat_of_equation_1 in h.
-    apply Nat.nlt_0_r in h. contradiction.
-  Defined.
-End FIN.
+Equations Derive Signature NoConfusion NoConfusionHom Subterm for Fin.t.
 
 Inductive type (Δ : nat) : Set :=
 | TId : Fin.t Δ -> type Δ
@@ -177,43 +133,6 @@ Proof.
 Qed.
 
 Print Assumptions mapply_ext_type_eq.
-
-Equations eq_rect_zwei : forall {A B : Set} {x y : A} {u v : B} {T : A -> B -> Set},
-    x = y -> u = v -> T x u -> T y v :=
-  eq_rect_zwei eq_refl eq_refl t := t.
-
-Lemma map_subst_map_zwei_1 :
-  forall {A B C : Set} {P : A -> B -> Set} {Q : C -> B -> Set}
-    (f : A -> C) (g : forall a b, P a b -> Q (f a) b)
-    {x y : A} (h1 : x = y) {u v : B} (h2 : u = v) (z : P x u),
-    eq_rect_zwei (f_equal f h1) h2 (g x u z) = g y v (eq_rect_zwei h1 h2 z).
-Proof.
-  intros A B C P Q f g x y h1 u v h2 z.
-  destruct h1; destruct h2.
-  do 2 rewrite eq_rect_zwei_equation_1; reflexivity.
-Defined.
-
-Lemma map_subst_map_zwei_2 :
-  forall {A B C : Set} {P : A -> B -> Set} {Q : A -> C -> Set}
-    (f : B -> C) (g : forall a b, P a b -> Q a (f b))
-    {x y : A} (h1 : x = y) {u v : B} (h2 : u = v) (z : P x u),
-    eq_rect_zwei h1 (f_equal f h2) (g x u z) = g y v (eq_rect_zwei h1 h2 z).
-Proof.
-  intros A B C P Q f g x y h1 u v h2 z.
-  destruct h1; destruct h2.
-  do 2 rewrite eq_rect_zwei_equation_1; reflexivity.
-Defined.
-
-Lemma map_subst_map_zwei_both :
-  forall {A B C D : Set} {P : A -> B -> Set} {Q : C -> D -> Set}
-    (f : A -> C) (h : B -> D) (g : forall a b, P a b -> Q (f a) (h b))
-    {x y : A} (h1 : x = y) {u v : B} (h2 : u = v) (z : P x u),
-    eq_rect_zwei (f_equal f h1) (f_equal h h2) (g x u z) = g y v (eq_rect_zwei h1 h2 z).
-Proof.
-  intros A B C D P Q f h g x y h1 u v h2 z.
-  destruct h1; destruct h2.
-  do 2 rewrite eq_rect_zwei_equation_1; reflexivity.
-Defined.
 
 Lemma mapply_ext_type_eq_rect_zwei :
   forall {Δ₁ Δ₂ : nat} (m : nat) (ρ : Fin.t Δ₁ -> Fin.t Δ₂) (X : Fin.t (m + Δ₁)),
