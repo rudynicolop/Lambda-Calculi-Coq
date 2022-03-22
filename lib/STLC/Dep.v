@@ -151,75 +151,28 @@ Inductive bred {Γ} : forall {τ}, Γ ⊢ τ -> Γ ⊢ τ -> Prop :=
     (t₁ ⋅ t₂)%term -->  (t₁ ⋅ t₂')%term
 where "x '-->' y" := (bred x y) : type_scope.
 
-Local Hint Constructors bred : core.
-
 Variant value {Γ} : forall {τ}, Γ ⊢ τ -> Prop :=
   Abs_value τ τ' (t : τ :: Γ ⊢ τ') : value (`λ t)%term.
 Derive Signature for value.
 
-Lemma value_ex : forall Γ τ (t : Γ ⊢ τ),
-    value t ->
-    exists ρ σ (bdy : ρ :: Γ ⊢ σ), t ~= (`λ bdy)%term.
+Lemma canonical_forms_abs : forall {τ τ'} (t : [] ⊢ τ → τ'),
+    value t -> exists body : [τ] ⊢ τ', t = (`λ body)%term.
 Proof.
-  intros Γ τ t Hv; inv Hv; eauto.
+  intros τ τ' t v; depelim v; eauto.
 Qed.
+
+Print Assumptions canonical_forms_abs.
 
 Local Hint Constructors value : core.
-
-Variant is_arrow : type -> Prop :=
-  Is_Arrow τ σ : is_arrow (τ → σ).
-Derive Signature for is_arrow.
-
-Lemma canonical_forms' : forall Γ τ (t : Γ ⊢ τ),
-    zilch Γ -> is_arrow τ ->
-    (forall t', ~ (t -->  t')) -> value t.
-Proof.
-  intros Γ τ t HΓ Hτ H;
-    induction t as [Γ n τ Hn | Γ τ ρ t IHt | Γ τ ρ t₁ IHt₁ t₂ _]; eauto.
-  - inv HΓ; inv Hτ; exfalso; clear H.
-    rewrite nth_error_nil in Hn.
-    discriminate.
-  - exfalso.
-    pose proof IHt₁ HΓ (Is_Arrow _ _) as IH; clear IHt₁.
-    assert (Ht₁ : forall t₁', ~ (t₁ -->  t₁')).
-    { intros t₁' Ht₁.
-      specialize H with (t':= (t₁' ⋅ t₂)%term); eauto. }
-    apply IH in Ht₁; clear IH.
-    depelim Ht₁.
-    specialize H with (t [[ t₂ ]])%term; auto.
-Qed.
-
-(*Print Assumptions canonical_forms'.*)
-
-Lemma canonical_forms : forall τ σ (t : [] ⊢ τ → σ),
-      (forall t', ~ (t -->  t')) ->
-    exists body, t = (`λ body)%term.
-Proof.
-  intros τ σ t H.
-  pose proof canonical_forms'
-       [] _ t zilch_nil (Is_Arrow _ _) H as H'; clear H.
-  depelim H'; eauto.
-Qed.
-
-Theorem Progress' : forall Γ τ (t : Γ ⊢ τ),
-    zilch Γ ->
-    value t \/ exists t', t --> t'.
-Proof.
-  intros Γ τ t HΓ;
-    induction t as
-      [ Γ n τ Hn
-      | Γ τ ρ t IHt
-      | Γ τ ρ t₁ IHt₁ t₂ _]; eauto.
-  - inv HΓ; exfalso.
-    rewrite nth_error_nil in Hn; discriminate.
-  - right.
-    pose proof IHt₁ HΓ as [Ht₁ | (t₁' & Ht₁)]; clear IHt₁; eauto.
-    depelim Ht₁; eauto.
-Qed.
+Local Hint Constructors bred : core.
 
 Theorem Progress : forall τ (t : [] ⊢ τ),
     value t \/ exists t', t --> t'.
 Proof.
-  Local Hint Constructors zilch : core.
-  eauto using Progress'.
+  intros τ t; depind t; cbn in *; try discriminate; eauto.
+  - exfalso; rewrite nth_error_nil in e; discriminate.
+  - clear IHt2. destruct IHt1 as [v1 | (t1' & ih1)]; eauto.
+    apply canonical_forms_abs in v1 as [t1' ?]; subst; eauto.
 Qed.
+
+Print Assumptions Progress.

@@ -1065,9 +1065,10 @@ Lemma canonical_abs :
     value t ->
     exists body : [τ] ⊢ τ', t = (`λ body)%term.
 Proof.
-  intros Δ τ τ' t v.
-  depelim v; eauto.
+  intros Δ τ τ' t v; depelim v; eauto.
 Qed.
+
+Print Assumptions canonical_abs.
 
 Lemma canonical_typabs :
   forall {Δ : nat} {Γ : list (type Δ)}
@@ -1096,3 +1097,5 @@ Proof.
     pose proof canonical_typabs t v
       as [t' t'eq]; subst; eauto.
 Qed.
+
+Print Assumptions Progress.

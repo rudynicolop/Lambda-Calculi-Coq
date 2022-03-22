@@ -1,4 +1,3 @@
-Require Export Lambda.Util Coq.Program.Equality.
 From Equations Require Import Equations.
 
 Inductive type : Set :=
@@ -6,7 +5,7 @@ Inductive type : Set :=
 | Arrow (t1 t2 : type).
 (**[]*)
 
-Equations Derive NoConfusion NoConfusionHom Subterm for type.
+Equations Derive NoConfusion NoConfusionHom Subterm EqDec for type.
 
 Declare Scope ty_scope.
 Delimit Scope ty_scope with ty.
@@ -36,7 +35,7 @@ Section TypeEq.
   Proof.
     intro t1; induction t1; intros []; simpl;
       autorewrite with core; intuition;
-        f_equal; eauto.
+      f_equal; eauto; try discriminate.
   Qed.
   
   Local Hint Resolve eq_teqb : core.
