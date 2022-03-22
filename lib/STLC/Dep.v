@@ -1,5 +1,4 @@
-Require Export Lambda.STLC.SimpleTypes.
-From Equations Require Import Equations.
+From Lambda Require Export ListUtil STLC.SimpleTypes.
 
 (** * Simply Typed Lambda Calculus. *)
 
@@ -23,8 +22,7 @@ Inductive term : list type -> type -> Set :=
     Γ ⊢ τ'
 where "Γ '⊢' τ" := (term Γ τ) : type_scope.
 
-Derive Signature for term.
-Equations Derive NoConfusion NoConfusionHom Subterm for term.
+Equations Derive Signature NoConfusion NoConfusionHom Subterm for term.
 
 Local Hint Constructors term : core.
 
@@ -95,21 +93,15 @@ Equations
   (forall τ, {n | nth_error Γ n = Some τ} ->
         {k | nth_error Δ k = Some τ}) -> forall {σ}, Γ ⊢ σ -> Δ ⊢ σ :=
       Rename f (Id _ _ _ Hm)   := term_of_nth_error (f _ (exist _ _ Hm));
-      Rename f (λ ρ ⇒ t')%term := (`λ Rename (ext f ρ) t')%term;
+      Rename f (λ ρ ⇒ t')%term := (`λ Rename (ext_nth_error f ρ) t')%term;
       Rename f (t₁ ⋅ t₂)%term  := (Rename f t₁ ⋅ Rename f t₂)%term.
 
-Definition exts' : forall {Γ Δ},
-    (forall τ, Has τ Γ -> Δ ⊢ τ) ->
-    forall {ρ σ}, Has σ (ρ :: Γ) -> ρ :: Δ ⊢ σ.
-Proof.
-  cbn; intros Γ Δ f ρ σ [H | H]; subst.
-  - refine (Id _ 0 _ _); reflexivity.
-  - refine (Rename _ (f _ H)).
-    intros τ Hτ.
-    apply nth_error_Has' in Hτ.
-    apply Has_nth_error; cbn.
-    right; assumption.
-Defined.
+Equations exts_has : forall {Γ Δ},
+    (forall {τ}, Has τ Γ -> Δ ⊢ τ) ->
+    forall {ρ σ}, Has σ (ρ :: Γ) -> ρ :: Δ ⊢ σ :=
+  exts_has f HasO := Id _ 0 _ _;
+  exts_has f (HasS hs) :=
+    Rename (fun τ '(exist _ n hn) => exist _ (S n) _) (f _ hs).
 
 Definition exts : forall {Γ Δ},
     (forall τ, {n | nth_error Γ n = Some τ} -> Δ ⊢ τ) ->
@@ -118,7 +110,7 @@ Proof.
   intros Γ Δ f ρ σ H.
   apply nth_error_Has' in H.
   pose proof (fun t H => f t (Has_nth_error H)) as f'.
-  exact (exts' f' H).
+  exact (exts_has f' H).
 Defined.
 
 Equations

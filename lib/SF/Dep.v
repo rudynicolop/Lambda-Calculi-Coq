@@ -1,5 +1,4 @@
-Require Export Lambda.Util.
-From Equations Require Export Equations.
+From Lambda Require Export ListUtil.
 Require Coq.Vectors.Fin.
 
 (** * System F *)
@@ -576,29 +575,6 @@ Notation "t '⦗' τ '⦘'"
   := (TypApp _ _ τ t)
        (at level 39, left associativity) : term_scope.
 
-Definition has_map : forall {A B : Set} (f : A -> B) {l a},
-    Has a l -> Has (f a) (map f l).
-Proof.
-  intros A B f l; induction l as [| h t ih];
-    intros a H; cbn in *.
-  - apply H.
-  - destruct H as [H | H]; subst.
-    + left; reflexivity.
-    + right; apply ih,H.
-Defined.
-
-Definition map_has : forall (A B : Set) (f : A -> B) (l : list A) b,
-    Has b (map f l) -> {a : A & f a = b & Has a l}.
-Proof.
-  intros A B f l.
-  induction l as [| a l ih]; intros b h; cbn in *.
-  - inv h.
-  - destruct h as [h | h].
-    + exact (existT2 _ _ a h (inl eq_refl)).
-    + apply ih in h as [a' fab hasa].
-      exact (existT2 _ _ a' fab (inr hasa)).
-Defined.
-
 Definition ext_Renamer : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
     (forall τ : type Δ, Has τ Γ₁ -> Has τ Γ₂) -> forall τ : type (S Δ),
       Has τ (map (rename_type Fin.FS) Γ₁) ->
@@ -610,23 +586,19 @@ Proof.
 Defined.
           
 Equations Rename : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
-    (forall τ : type Δ, Has τ Γ₁ -> Has τ Γ₂) ->
+    (forall {τ : type Δ}, Has τ Γ₁ -> Has τ Γ₂) ->
     forall {τ : type Δ}, Γ₁ ⊢ τ -> Γ₂ ⊢ τ :=
   Rename ρ (Id _ _ has) := Id _ _ (ρ _ has);
-  Rename ρ (λ σ ⇒ t)%term := (λ σ ⇒ Rename (ext' ρ σ) t)%term;
+  Rename ρ (λ σ ⇒ t)%term := (λ σ ⇒ Rename (fun τ => ext_has ρ (b:=σ) (a:=τ)) t)%term;
   Rename ρ (t₁ ⋅ t₂)%term := (Rename ρ t₁ ⋅ Rename ρ t₂)%term;
   Rename ρ (Λ t)%term     := (Λ Rename (ext_Renamer ρ) t)%term;
   Rename ρ (t ⦗ τ ⦘)%term := ((Rename ρ t) ⦗ τ ⦘)%term.
 
-Definition exts : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
-    (forall τ : type Δ, Has τ Γ₁ -> Γ₂ ⊢ τ) ->
-    forall (ρ τ : type Δ), Has τ (ρ :: Γ₁) -> ρ :: Γ₂ ⊢ τ.
-Proof.
-  cbn; intros Δ Γ₁ Γ₂ σ ρ τ [h | h]; subst.
-  - refine (Id _ τ _); cbn; left; reflexivity.
-  - refine (Rename _ (σ _ h)).
-    intros α has; cbn; right; exact has.
-Defined.
+Equations exts : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
+    (forall {τ : type Δ}, Has τ Γ₁ -> Γ₂ ⊢ τ) ->
+    forall {ρ τ : type Δ}, Has τ (ρ :: Γ₁) -> ρ :: Γ₂ ⊢ τ :=
+  exts σ HasO := Id _ _ HasO;
+  exts σ (HasS hs) := Rename (fun τ => HasS (a:=τ)) (σ _ hs).
 
 Equations Rename_type :
   forall {Δ₁ Δ₂ : nat} {Γ : list (type Δ₁)}
@@ -663,10 +635,10 @@ Proof.
 Defined.
 
 Equations subs : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
-      (forall τ : type Δ, Has τ Γ₁ -> Γ₂ ⊢ τ) ->
-      forall {τ : type Δ}, Γ₁ ⊢ τ -> Γ₂ ⊢ τ :=
+    (forall {τ : type Δ}, Has τ Γ₁ -> Γ₂ ⊢ τ) ->
+    forall {τ : type Δ}, Γ₁ ⊢ τ -> Γ₂ ⊢ τ :=
   subs σ (Id _ _ h)     := σ _ h;
-  subs σ (λ τ ⇒ t)%term := (λ τ ⇒ subs (exts σ τ) t)%term;
+  subs σ (λ τ ⇒ t)%term := (λ τ ⇒ subs (fun τ => exts σ (τ:=τ)) t)%term;
   subs σ (t₁ ⋅ t₂)%term := (subs σ t₁ ⋅ subs σ t₂)%term;
   subs σ (Λ t)%term     := (Λ subs (exts_Rename_type σ) t)%term;
   subs σ (t ⦗ τ ⦘)%term := (subs σ t ⦗ τ ⦘)%term.
@@ -674,9 +646,9 @@ Equations subs : forall {Δ : nat} {Γ₁ Γ₂ : list (type Δ)},
 Print Assumptions subs.
 
 Equations sub_helper : forall {Δ : nat} {Γ : list (type Δ)} {τ : type Δ},
-    Γ ⊢ τ -> forall (τ' : type Δ), Has τ' (τ :: Γ) -> Γ ⊢ τ' :=
-  sub_helper t _ (inl eq_refl) := t;
-  sub_helper _ _ (inr h)       := Id _ _ h.
+    Γ ⊢ τ -> forall τ' : type Δ, Has τ' (τ :: Γ) -> Γ ⊢ τ' :=
+  sub_helper t _ HasO := t;
+  sub_helper _ _ (HasS hs) := Id _ _ hs.
 
 Definition sub {Δ : nat} {Γ : list (type Δ)} {τ τ' : type Δ}
            (body : τ :: Γ ⊢ τ') (arg : Γ ⊢ τ) : Γ ⊢ τ' :=
@@ -684,15 +656,6 @@ Definition sub {Δ : nat} {Γ : list (type Δ)} {τ τ' : type Δ}
 
 Notation "x '[[' y ']]'"
   := (sub x y) (at level 38, left associativity) : term_scope.
-
-(*Definition sub_type_term_helper
-           {Δ : nat} {Γ : list (type Δ)} {τ : type (S Δ)}
-  : forall τ' : type Δ, Fin.t Δ -> Γ ⊢ (τ `[[τ']])%ty.*)
-
-(*Definition subs_type_term
-  : forall {Δ : nat} {Γ : list (type Δ)} {τ : type (S Δ)}
-      (σ : Fin.t Δ -> type Δ), Γ ⊢ τ -> Γ ⊢ 
-Admitted.*)
 
 Lemma mapply_exts_type_rename_type :
   forall (k : nat) {Δ₁ Δ₂ : nat} (X : Fin.t (k + Δ₁))

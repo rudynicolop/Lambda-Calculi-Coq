@@ -442,32 +442,6 @@ Notation "e '-->*' e'"
 Definition halts (e : expr) : Prop :=
   exists e', e -->* e' /\ forall e'', ~ e' -->  e''.
 
-Section AccLemmas.
-  Local Hint Constructors Acc : core.
-  
-  Lemma acc_pres : forall A B (f : A -> B) (R : A -> A -> Prop) (Q : B -> B -> Prop),
-    (forall a1 a2, R a1 a2 -> Q (f a1) (f a2)) ->
-    forall a, Acc Q (f a) -> Acc R a.
-  Proof.
-    intros A B f R Q Hmap a HQ.
-    remember (f a) as fa eqn:Heqfa.
-    generalize dependent a.
-    induction HQ; intros a Heqfa; subst; eauto.
-  Qed.
-
-  Lemma Acc_ind2 :
-    forall A B (RA : A -> A -> Prop) (RB : B -> B -> Prop) (P : A -> B -> Prop),
-      (forall a b, (forall a', RA a' a -> P a' b) ->
-              (forall b', RB b' b -> P a b') -> P a b) ->
-      forall a b, Acc RA a -> Acc RB b -> P a b.
-  Proof.
-    intros A B R Q P H a b HA.
-    generalize dependent b.
-    induction HA; intros b HB;
-      induction HB; eauto.
-  Qed.
-End AccLemmas.
-
 (** Strongly Normalizing. *)
 Definition SN : expr -> Prop := Acc (fun e' e => e -->  e').
 
