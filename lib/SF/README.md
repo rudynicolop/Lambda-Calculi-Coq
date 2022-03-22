@@ -8,5 +8,5 @@ The primary development is `Dep.v` which features
 The syntax is type-correct-by-construction
 & heavily reliant upon [coq-equations](https://github.com/mattam82/Coq-Equations).
 `Plain.v` is a supplemental implementation
-which serves as a guide to development
+which serves as a guide to develop
 some auxilary definitions for the dependent type version.
