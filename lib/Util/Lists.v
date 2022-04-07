@@ -4,39 +4,34 @@ From Equations Require Export Equations.
 (** * List helpers. *)
 
 Section List.
-  Context {A : Set}.
+  Context {A : Type}.
 
-  Inductive Has : A -> list A -> Set :=
+  Inductive Has : A -> list A -> Type :=
   | HasO : forall a t, Has a (a :: t)
   | HasS : forall a h t, Has a t -> Has a (h :: t).
 
   Global Arguments HasO {_} {_}.
   Global Arguments HasS {_} {_} {_}.
-
+  
   Equations Derive NoConfusion NoConfusionHom Subterm for list.
   Equations Derive Signature NoConfusion for Has.
-  (*Equations Derive NoConfusionHom for Has.*)
-  (*Next Obligation.
-  Proof.
-    unfold NoConfusionHom_Has in H.
-    unfold apply_noConfusion in H. cbn in H.
-    unfold DepElim.solution_left,DepElim.solution_right in H.
-    unfold DepElim.eq_simplification_sigma1,Logic.transport in H.
-    repeat unfold noConfusionHom_list_obligation_2,
-      noConfusionHom_list_obligation_4,
-      noConfusionHom_list_obligation_1,
-      NoConfusionHom_list,eq_sym in H. cbn in H.
-    depind a0; cbn in *; depelim b; cbn in *.
-    - unfold DepElim.pack_sigma_eq_nondep in *.
-      Search (eq_rect (_ :: _) _ _ (_ :: _) _).
-      rewrite f_equal_dep in H.
-      Print Assumptions Eqdep.EqdepTheory.eq_rect_eq.
-      depelim e'; cbn in *. inv H.
-      depelim e'0; cbn in *.
-    - admit.
-    - admit.
-    - f_equal.*)
 
+  Inductive hlist (F : A -> Type) : list A -> Type :=
+  | hnil : hlist F []
+  | hcons : forall a l,
+      F a ->
+      hlist F l ->
+      hlist F (a :: l).
+  Equations Derive Signature NoConfusion NoConfusionHom for hlist.
+  
+  Global Arguments hnil {_}.
+  Global Arguments hcons {_} {_} {_}.
+  
+  Equations lookup_has : forall {F : A -> Type} {Γ : list A} {a : A},
+      hlist F Γ -> Has a Γ -> F a :=
+    lookup_has (hcons v _) HasO      := v;
+    lookup_has (hcons _ ϵ) (HasS hs) := lookup_has ϵ hs.
+  
   Equations ext_has : forall {Γ Δ},
       (forall a : A, Has a Γ -> Has a Δ) ->
       forall b a : A, Has a (b :: Γ) -> Has a (b :: Δ) :=
@@ -152,12 +147,12 @@ Section List.
 End List.
 
 Equations has_map :
-  forall {A B : Set} (f : A -> B) {l : list A} {e : A},
+  forall {A B : Type} (f : A -> B) {l : list A} {e : A},
     Has e l -> Has (f e) (map f l) :=
   has_map f  HasO     := HasO;
   has_map f (HasS hs) := HasS (has_map f hs).
 
-Definition map_has : forall (A B : Set) (f : A -> B) (l : list A) b,
+Definition map_has : forall (A B : Type) (f : A -> B) (l : list A) b,
     Has b (map f l) -> {a : A & f a = b & Has a l}.
 Proof.
   intros A B f l.
