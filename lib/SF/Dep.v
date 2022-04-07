@@ -8,7 +8,7 @@ Equations mapply : forall {A : nat -> Type} (m : nat),
   mapply  O    f a := a;
   mapply (S k) f a := f _ (mapply k f a).
 
-Lemma f_equal_id : forall (A : Type) (x y : A) (h : x = y),
+Lemma f_equal_id : forall (A : Set) (x y : A) (h : x = y),
     f_equal id h = h.
 Proof.
   intros A x y h.
@@ -17,7 +17,7 @@ Defined.
 
 Equations Derive Signature NoConfusion NoConfusionHom Subterm for Fin.t.
 
-Inductive type (Δ : nat) : Type :=
+Inductive type (Δ : nat) : Set :=
 | TId : Fin.t Δ -> type Δ
 | TForall (τ : type (S Δ)) : type Δ
 | TArrow (τ₁ τ₂ : type Δ) : type Δ.
@@ -450,7 +450,7 @@ Defined.
 
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 
-Inductive term : forall {Δ : nat}, list (type Δ) -> type Δ -> Type :=
+Inductive term : forall {Δ : nat}, list (type Δ) -> type Δ -> Set :=
 | Id {Δ : nat} (Γ : list (type Δ)) (τ : type Δ) :
   Has τ Γ ->
   Γ ⊢ τ

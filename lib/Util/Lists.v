@@ -4,9 +4,9 @@ From Equations Require Export Equations.
 (** * List helpers. *)
 
 Section List.
-  Context {A : Type}.
+  Context {A : Set}.
 
-  Inductive Has : A -> list A -> Type :=
+  Inductive Has : A -> list A -> Set :=
   | HasO : forall a t, Has a (a :: t)
   | HasS : forall a h t, Has a t -> Has a (h :: t).
 
@@ -15,22 +15,6 @@ Section List.
   
   Equations Derive NoConfusion NoConfusionHom Subterm for list.
   Equations Derive Signature NoConfusion for Has.
-
-  Inductive hlist (F : A -> Type) : list A -> Type :=
-  | hnil : hlist F []
-  | hcons : forall a l,
-      F a ->
-      hlist F l ->
-      hlist F (a :: l).
-  Equations Derive Signature NoConfusion NoConfusionHom for hlist.
-  
-  Global Arguments hnil {_}.
-  Global Arguments hcons {_} {_} {_}.
-  
-  Equations lookup_has : forall {F : A -> Type} {Γ : list A} {a : A},
-      hlist F Γ -> Has a Γ -> F a :=
-    lookup_has (hcons v _) HasO      := v;
-    lookup_has (hcons _ ϵ) (HasS hs) := lookup_has ϵ hs.
   
   Equations ext_has : forall {Γ Δ},
       (forall a : A, Has a Γ -> Has a Δ) ->
@@ -147,12 +131,12 @@ Section List.
 End List.
 
 Equations has_map :
-  forall {A B : Type} (f : A -> B) {l : list A} {e : A},
+  forall {A B : Set} (f : A -> B) {l : list A} {e : A},
     Has e l -> Has (f e) (map f l) :=
   has_map f  HasO     := HasO;
   has_map f (HasS hs) := HasS (has_map f hs).
 
-Definition map_has : forall (A B : Type) (f : A -> B) (l : list A) b,
+Definition map_has : forall (A B : Set) (f : A -> B) (l : list A) b,
     Has b (map f l) -> {a : A & f a = b & Has a l}.
 Proof.
   intros A B f l.
@@ -161,3 +145,23 @@ Proof.
   - apply ih in h0 as [a' fab hasa].
     exact (existT2 _ _ a' fab (HasS hasa)).
 Defined.
+
+Section Hlist.
+  Context {A : Set}.
+  
+  Inductive hlist (F : A -> Type) : list A -> Type :=
+  | hnil : hlist F []
+  | hcons : forall a l,
+      F a ->
+      hlist F l ->
+      hlist F (a :: l).
+  Equations Derive Signature NoConfusion NoConfusionHom for hlist.
+  
+  Global Arguments hnil {_}.
+  Global Arguments hcons {_} {_} {_}.
+  
+  Equations lookup_has : forall {F : A -> Type} {Γ : list A} {a : A},
+      hlist F Γ -> Has a Γ -> F a :=
+    lookup_has (hcons v _) HasO      := v;
+    lookup_has (hcons _ ϵ) (HasS hs) := lookup_has ϵ hs.
+End Hlist.

@@ -7,7 +7,7 @@ From Lambda Require Export Util.Lists Util.EqRect STLC.SimpleTypes.
 
 Reserved Notation "Γ '⊢' τ" (at level 80, no associativity).
 
-Inductive term : list type -> type -> Type :=
+Inductive term : list type -> type -> Set :=
 | Id (Γ : list type) (τ : type) :
   Has τ Γ ->
   Γ ⊢ τ
