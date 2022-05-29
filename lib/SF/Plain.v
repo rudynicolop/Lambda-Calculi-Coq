@@ -3,12 +3,6 @@ From Equations Require Export Equations.
 
 (** * System F. *)
 
-Fixpoint mapply {A : Set} (m : nat) (f : A -> A) (a : A) : A :=
-  match m with
-  | O   => a
-  | S m => f (mapply m f a)
-  end.
-
 (** De Bruijn syntax. *)
 
 Inductive typ : Set :=
@@ -41,12 +35,6 @@ Equations typ_eq_dec : forall (τ ρ : typ), {τ = ρ} + {τ <> ρ} :=
       | right _ => right _
       | left  _ => left  _}};
   typ_eq_dec _ _ := right _.
-
-Definition ext (ρ : nat -> nat) (X : nat) : nat :=
-  match X with
-  | O   => O
-  | S n => S (ρ n)
-  end.
 
 Fixpoint rename_typ (ρ : nat -> nat) (τ : typ) : typ :=
   match τ with

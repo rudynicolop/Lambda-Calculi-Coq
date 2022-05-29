@@ -3,6 +3,26 @@ Require Export Coq.Program.Basics Coq.Classes.RelationClasses
         Coq.micromega.Lia Coq.Arith.Compare_dec.
 Export ListNotations.
 
+Fixpoint mapply {A : Set} (m : nat) (f : A -> A) (a : A) : A :=
+  match m with
+  | O   => a
+  | S m => f (mapply m f a)
+  end.
+
+Definition ext (ρ : nat -> nat) (X : nat) : nat :=
+  match X with
+  | O   => O
+  | S n => S (ρ n)
+  end.
+
+Lemma mapply_ext : forall n x ρ,
+    ext (mapply n ext ρ) (mapply n ext S x) = mapply n ext S (mapply n ext ρ x).
+Proof.
+  intro n; induction n as [| n ihn];
+    intros x ρ; cbn; try reflexivity.
+  destruct x as [| x]; cbn; try reflexivity || f_equal; auto.
+Qed.
+
 Infix "$" := apply (at level 41, right associativity).
 
 Ltac inv H := inversion H; subst; clear H.
