@@ -9,6 +9,19 @@ Fixpoint mapply {A : Set} (m : nat) (f : A -> A) (a : A) : A :=
   | S m => f (mapply m f a)
   end.
 
+Lemma mapply_id : forall {A : Set} (m : nat) (a : A),
+    mapply m (fun a => a) a = a.
+Proof.
+  intros A m; induction m as [| m ih]; intro a; cbn; auto.
+Qed.
+
+Lemma mapply_plus : forall m n,
+    mapply m S n = m + n.
+Proof.
+  intro m; induction m as [| m ih];
+    intros n; cbn; f_equal; auto.
+Qed.
+
 Definition ext (ρ : nat -> nat) (X : nat) : nat :=
   match X with
   | O   => O

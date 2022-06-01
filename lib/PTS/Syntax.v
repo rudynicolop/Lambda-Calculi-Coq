@@ -1,4 +1,4 @@
-Require Export Lambda.Util.Basic.
+Require Export Lambda.Util.Basic Init.Nat.
 From Equations Require Export Equations.
 
 (** De Bruijn syntax of terms. *)
@@ -42,6 +42,34 @@ Section Sub.
     | λ A ⇒ B => λ Rename ρ A ⇒ Rename (ext ρ) B
     | ∏ A `, B => ∏ Rename ρ A `, Rename (ext ρ) B
     end.
+
+  Lemma Rename_mapply_id : forall A m,
+      Rename (mapply m ext (fun n => n)) A = A.
+  Proof.
+    intro A;
+      induction A as
+      [ s | x | A ihA B ihb
+      | A ihA B ihB | A ihA B ihB ];
+      intros m;
+      try specialize ihB with (m := S m);
+      cbn in *; unfold "$"; f_equal; auto using mapply_id.
+    generalize dependent x.
+    induction m as [| m ih]; intro x; cbn; try reflexivity.
+    destruct x as [| x]; cbn; f_equal; auto.
+  Qed.
+  
+  Lemma Rename_id : forall A, Rename (fun n => n) A = A.
+  Proof.
+    intro A.
+    pose proof Rename_mapply_id A 0 as h;
+      cbn in h; assumption.
+  Qed.
+
+  Lemma map_Rename_id : forall As, map (Rename (fun n => n)) As = As.
+  Proof.
+    intro As; induction As as [| A As ih];
+      cbn; f_equal; auto using Rename_id.
+  Qed.
   
   Lemma Rename_mapply_ext : forall A ρ n,
       Rename (mapply (S n) ext ρ) (Rename (mapply n ext S) A)
@@ -62,6 +90,50 @@ Section Sub.
     intros A ρ.
     pose proof Rename_mapply_ext A ρ 0 as h;
       cbn in h; assumption.
+  Qed.
+
+  Lemma mapply_ext_add : forall m n k x,
+      mapply m ext (add n) (mapply m ext (add k) x) = mapply m ext (add (n + k)) x.
+  Proof.
+    intro m; induction m as [| m ih];
+      intros n k x; cbn; try lia.
+    destruct x as [| x]; cbn; f_equal; auto.
+  Qed.
+  
+  Lemma Rename_ext_add : forall A m n k,
+      Rename (mapply m ext (add n)) (Rename (mapply m ext (add k)) A)
+      = Rename (mapply m ext (add (n + k))) A.
+  Proof.
+    intro A; induction A as
+      [ s | x | A ihA B ihb
+      | A ihA B ihB | A ihA B ihB ];
+      intros m n k; cbn; unfold "$";
+      try specialize ihB with (S m) n k; try cbn in ihB;
+      f_equal; auto using mapply_ext_add; try lia.
+  Qed.
+  
+  Lemma Rename_add : forall A m n,
+      Rename (add m) (Rename (add n) A) = Rename (add (m + n)) A.
+  Proof.
+    intros A m n.
+    pose proof Rename_ext_add A 0 m n as h;
+      cbn in h; assumption.
+  Qed.
+
+  Lemma map_Rename_add : forall As m n,
+      map (Rename (add m)) (map (Rename (add n)) As)
+      = map (Rename (add (m + n))) As.
+  Proof.
+    intro As; induction As as [| A As ih];
+      intros m n; cbn; f_equal; auto using Rename_add.
+  Qed.
+
+  Lemma map_Rename_ext_add : forall As m n k,
+      map (Rename (mapply m ext (add n))) (map (Rename (mapply m ext (add k))) As)
+      = map (Rename (mapply m ext (add (n + k)))) As.
+  Proof.
+    intro As; induction As as [| A As ih];
+      intros m n k; cbn; f_equal; auto using Rename_ext_add.
   Qed.
   
   Definition exts (σ : nat -> term sorts) (x : nat) : term sorts :=
@@ -105,19 +177,14 @@ Section Sub.
       cbn in *; assumption.
   Qed.
 
-  Lemma Rename_ident_distr : forall n x ρ C,
+  Lemma Rename_ident_distr : forall x n ρ C,
       Rename (mapply n ext ρ) (mapply n exts (sub_helper C) x)
       = mapply n exts (sub_helper (Rename ρ C)) (ext (mapply n ext ρ) x).
   Proof.
-    intro n; induction n as [| n ihn];
-      intros x ρ C; cbn.
-    - destruct x; reflexivity.
-    - destruct x as [| x]; cbn; auto; unfold "$".
-      rewrite <- ihn.
-      pose proof Rename_mapply_ext as h.
-      specialize h with (ρ := ρ) (n := n); cbn in h.
-      
-  Qed.    
+    intro x; induction x as [| x ihx];
+      intros [| n] ρ C; cbn; unfold "$"; try reflexivity.
+    rewrite Rename_ext; f_equal; auto.
+  Qed.
   
   Lemma Rename_subs_distr : forall (A B : term sorts) ρ n,
       Rename
@@ -132,9 +199,8 @@ Section Sub.
       [ s | x | A ihA B ihB
       | A ihA B ihB | A ihA B ihB];
       intros C ρ n; cbn; unfold "$";
-      try (f_equal; eauto;
+      try (f_equal; eauto using Rename_ident_distr;
            try pose proof ihB C ρ (S n) as ihB; cbn in *; assumption).
-    
   Qed.
       
   Definition sub (body arg : term sorts) : term sorts :=
@@ -155,6 +221,8 @@ Lemma Rename_sub_distr : forall {sorts : Set} (A B : term sorts) ρ,
     Rename ρ (A [[ B ]]) = Rename (ext ρ) A [[ Rename ρ B ]].
 Proof.
   intros sorts A B ρ; unfold "_ [[ _ ]]".
+  pose proof Rename_subs_distr A B ρ 0 as h;
+    cbn in h; assumption.
 Qed.
 
 Notation "x '→' y"
@@ -442,6 +510,53 @@ Module Judge (T : Triple).
   Equations Derive Signature for judge.
 
   Local Hint Constructors judge : core.
+
+
+  Lemma preservation : forall A A',
+      A --> A' -> forall Γ B, Γ ⊢ A ∈ B -> Γ ⊢ A' ∈ B.
+  Proof.
+    intros A A' h Γ B ht.
+    generalize dependent A'.
+    induction ht; intros A' hA'; inv hA'; eauto.
+    - inv ht1.
+      + (* lemmas :
+           1. [map (Rename S) (A :: Γ) ⊢ B ∈ C -> Γ ⊢ a ∈ A -> Γ ⊢ B [[a]] ∈ C [[a]]] *) admit.
+      + (* lemma. *) admit.
+    - apply IHht2 in H2 as h.
+      (* lemmas:
+         1. [a --> a' -> B [[ a ]] --> B [[ a' ]]].
+         2. [Γ ⊢ A ∈ ∏ B `, C -> exists s, map (Rename S) A :: Γ ⊢ C ∈ sort s] *)
+      assert (hs: exists s, map (Rename S) (A :: Γ) ⊢ B ∈ sort s) by admit.
+      destruct hs as [s hs].
+      apply judge_conv with (B := B [[ B' ]]) (s := s); eauto.
+      + (* maybe [A =β B] needs to be symmetric? *) admit.
+      + (* by substitution lemma. *) admit.
+    - econstructor; eauto; cbn in *.
+      (* lemmas:
+         1. [ Γ =β Γ' -> Γ ⊢ A ∈ B -> Γ' ⊢ A ∈ B ] *) admit.
+    - (* needs similar lemmas to above. *)
+      apply IHht1 in H3 as h.
+      apply judge_conv with (B := ∏ A'0 `, B) (s := s₃); eauto.
+      + (* Congruence lemmas for [A =β B]. *) admit.
+      + econstructor; eauto; cbn in *.
+        (* needs conv context lemma. *) admit.
+      + econstructor; eauto; cbn in *;
+          (* needs conv context lemma. *) admit.
+    - apply judge_conv with (B := B) (s := s); auto.
+      apply IHht2. constructor.
+    - apply judge_conv with (B:=B) (s:=s); auto.
+      apply IHht2. constructor. assumption.
+    - apply judge_conv with (B:=B) (s:=s); auto.
+      apply IHht2. constructor. assumption.
+    - apply judge_conv with (B:=B) (s:=s); auto.
+      apply IHht2. constructor. assumption.
+    - apply judge_conv with (B:=B) (s:=s); auto.
+      apply IHht2. constructor. assumption.
+    - apply judge_conv with (B:=B) (s:=s); auto.
+      apply IHht2. constructor. assumption.
+    - apply judge_conv with (B:=B) (s:=s); auto.
+      apply IHht2. constructor. assumption.
+  Admitted. 
   
   Lemma judge_abs_pi : forall Γ A B b s,
       map (Rename S) (A :: Γ) ⊢ b ∈ B ->
@@ -463,14 +578,99 @@ Module Judge (T : Triple).
     rewrite <- sub_rename_S with (B := B) (a := a); eauto.
   Qed.
 
+  Lemma judge_Rename_ext_S : forall Γ B C,
+      Γ ⊢ B ∈ C -> forall Es D,
+        Es ++ Rename (add (length Es)) D
+           :: map (Rename (add (length Es + 1))) Γ
+           ⊢ Rename (mapply (length Es) ext S) B
+           ∈ Rename (mapply (length Es) ext S) C.
+  Proof.
+    intros Γ B C h; induction h;
+      intros Es D; cbn; unfold "$"; auto.
+    - constructor. (*Search (mapply _ ext S).
+      generalize dependent Γ;
+        generalize dependent A;
+        generalize dependent D;
+        generalize dependent x.
+      induction Es as [| E Es ih]; intros.
+      + unfold length.
+        rewrite <- map_Rename_add; cbn.
+        rewrite <- eta_expansion with (f := S),
+            map_Rename_id,nth_error_map, H; reflexivity.
+      + replace (length (E :: Es)) with (1 + (length Es)) by reflexivity.
+        rewrite <- Rename_add.
+        do 2 rewrite <- map_Rename_add; cbn.
+        rewrite <- eta_expansion with (f := S).
+        destruct x as [| x]; cbn.
+        specialize ih with 0 E A Γ.
+        apply ih in H. cbn in H.*)
+      admit.
+    - rewrite Rename_sub_distr.
+      econstructor; eauto.
+    - econstructor; eauto; cbn.
+      rewrite map_app.
+      specialize IHh2 with
+        (Es := Rename S (Rename (mapply (length Es) ext S) A)
+                      :: map (Rename S) Es).
+  Abort.
+  
+  Lemma judge_Rename_app : forall Γ B C,
+      Γ ⊢ B ∈ C -> forall As Es,
+        Es ++ As ++
+           map (Rename (plus (length Es))) (map (Rename (plus (length As))) Γ)
+           ⊢ Rename (mapply (length Es) ext (plus (length As))) B
+           ∈ Rename (mapply (length Es) ext (plus (length As))) C.
+  Proof.
+    intros Γ B C h; induction h;
+      intros As Es; cbn in *; unfold "$"; auto.
+    - constructor.
+      rewrite map_Rename_add. (*Print ext.*)
+      (*Search (mapply _ ext).*)
+      generalize dependent As.
+      generalize dependent Γ.
+      generalize dependent x.
+      generalize dependent A.
+      induction Es as [| E Es ih]; intros.
+      + cbn; rewrite nth_error_app_plus,
+          nth_error_map, H; reflexivity.
+      + replace (length (E :: Es)) with
+          (1 + length Es) by reflexivity.
+        do 2 rewrite <- map_Rename_add; cbn.
+        rewrite <- eta_expansion with (f := S).
+        apply ih with (As:=As) in H as h.
+        destruct x as [| x]; cbn.
+        
+  Abort.
+  
+  Lemma judge_Rename_app : forall Γ B C,
+      Γ ⊢ B ∈ C -> forall As,
+        As ++ map (Rename (plus (length As))) Γ
+           ⊢ Rename (plus (length As)) B ∈ Rename (plus (length As)) C.
+  Proof.
+    intros Γ B C h; induction h; intro As; cbn in *; unfold "$"; auto.
+    - constructor.
+      rewrite nth_error_app_plus,
+        nth_error_map, H; reflexivity.
+    - rewrite Rename_sub_distr; econstructor; eauto.
+    - econstructor; eauto; cbn.
+      rewrite map_app. admit.
+    - econstructor; eauto; cbn.
+      rewrite map_app.
+  Abort.
+  
   Lemma judge_Rename_S : forall Γ E B C,
       Γ ⊢ B ∈ C ->
       E :: map (Rename S) Γ ⊢ Rename S B ∈ Rename S C.
   Proof.
-    intros G E B C h; depind h; cbn; unfold "$"; auto.
+    intros G E B C h; generalize dependent E;
+      induction h; intro E; cbn in *; unfold "$"; auto.
     - constructor; cbn.
       rewrite nth_error_map, H; reflexivity.
-    - 
+    - rewrite Rename_sub_distr; cbn in IHh1.
+      econstructor; eauto.
+    - econstructor; eauto; cbn. admit.
+    - econstructor; eauto; cbn. (*Check Rename_ext.*)
+  Abort.
   
   Lemma judge_arrow : forall Γ A B s₁ s₂ s₃,
       rule s₁ s₂ s₃ ->
@@ -480,7 +680,7 @@ Module Judge (T : Triple).
   Proof.
     intros Γ A B s1 s2 s3 hr hA hB.
     econstructor; eauto; cbn.
-    
+  Abort.
 End Judge.
 
 (** System U definitions from
@@ -506,6 +706,13 @@ Module SystemU_Spec.
     | type_type : U_rule ◻ ◻ ◻
     | triangle_prop : U_rule △ * *
     | triangle_type : U_rule △ ◻ ◻.
+
+  Local Hint Constructors U_rule : core.
+  
+  Lemma U_rule_star : forall s, U_rule s * *.
+  Proof.
+    intros []; auto.
+  Qed.
 End SystemU_Spec.
 
 Module SystemU_Triple <: Triple.
@@ -527,8 +734,18 @@ Module SystemU.
     intros A ρ; reflexivity.
   Qed.
   
-  Notation "'⊥'" := (∏ sort * `, 0) (at level 0, no associativity) : term_scope.
+  Notation "'⊥'" := (∏ sort * `, ident 0) (at level 0, no associativity) : term_scope.
   Notation "'¬' A" := (A → ⊥) (at level 41) : term_scope.
+  
+  Lemma Rename_false : forall ρ, Rename ρ ⊥ = ⊥.
+  Proof.
+    intro ρ; reflexivity.
+  Qed.
+
+  Lemma Rename_neg : forall ρ A, Rename ρ (¬ A) = ¬ Rename ρ A.
+  Proof.
+    intros ρ A; reflexivity.
+  Qed.
   
   Definition U :=
     ∏ sort ◻ `, (pow (pow (ident 0)) → ident 0) → (pow (pow (ident 0))).
@@ -547,14 +764,42 @@ Module SystemU.
   Local Hint Unfold axiom : core.
   Local Hint Unfold rule : core.
   Local Hint Unfold pow : core.
+  Local Hint Rewrite map_cons : core.
+  Local Hint Rewrite (@Rename_arrow sorts) : core.
+  Local Hint Resolve U_rule_star : core.
+
+  Lemma pow_judge : forall Γ A,
+      Γ ⊢ A ∈ sort ◻ -> Γ ⊢ pow A ∈ sort ◻.
+  Proof.
+    intros Γ A h;
+      econstructor; try eassumption; eauto;
+      autorewrite with core; cbn; auto.
+  Qed.
+
+  Lemma false_judge : forall Γ, Γ ⊢ ⊥ ∈ sort *.
+  Proof.
+    intro Γ; eapply judge_pi with (s₁ := ◻); eauto.
+  Qed.
+  
+  Local Hint Resolve false_judge : core.
+
+  Lemma neg_judge : forall Γ A s, Γ ⊢ A ∈ sort s -> Γ ⊢ ¬ A ∈ sort *.
+  Proof.
+    intros Γ A s h;
+      eapply judge_pi with (s₁ := s); eauto.
+  Qed.
+
+  Local Hint Resolve neg_judge : core.
+  Local Hint Resolve pow_judge : core.
+  Arguments pow : simpl never.
   
   Lemma U_judge : forall Γ, Γ ⊢ U ∈ sort ◻.
   Proof.
-    intros Γ; unfold U.
-    eapply judge_pi with (s₁ := △) (s₂ := ◻); eauto.
-    eapply judge_pi with (s₁ := ◻) (s₂ := ◻); eauto.
+    intros Γ; unfold U; simpl; unfold "$".
+    eapply judge_pi with (s₁ := △) (s₂ := ◻);
+      eauto; autorewrite with core.
+    eapply judge_pi with (s₁ := ◻) (s₂ := ◻); eauto; simpl; unfold "$".
     - eapply judge_pi with (s₁ := ◻) (s₂ := ◻); cbn; unfold "$"; eauto.
-      do 2 (eapply judge_pi with (s₁ := ◻) (s₂ := ◻); cbn; eauto).
     - do 2 (eapply judge_pi with (s₁ := ◻) (s₂ := ◻); cbv; eauto).
   Qed.
 
@@ -566,12 +811,15 @@ Module SystemU.
       λ (pow (pow (ident 0)) → ident 0) ⇒
       λ pow (ident 1) ⇒
       ident 3 ⋅ λ U ⇒ (ident 1 ⋅ (ident 2 ⋅ (ident 0 ⋅ ident 3 ⋅ ident 2))).
-
+   
+  Lemma Rename_τ : forall ρ, Rename ρ τ = τ.
+  Proof.
+    intros ρ; reflexivity.
+  Qed.
+  
   Arguments U : simpl never.
   Local Hint Rewrite Rename_pow : core.
   Local Hint Rewrite Rename_U : core.
-  Local Hint Rewrite map_cons : core.
-  Local Hint Rewrite (@Rename_arrow sorts) : core.
   
   Lemma τ_judge : forall Γ, Γ ⊢ τ ∈ pow (pow U) → U.
   Proof.
@@ -579,9 +827,8 @@ Module SystemU.
     apply judge_abs_pi with (s := sort ◻); autorewrite with core.
     - apply judge_abs_pi with (s := sort ◻); auto.
       autorewrite with core. unfold Rename at 1.
-      apply judge_abs_pi with (s := sort ◻); autorewrite with core.
-      + unfold Rename at 1; unfold Rename at 2.
-        unfold "$".
+      apply judge_abs_pi with (s := sort ◻); autorewrite with core; eauto.
+      + unfold Rename at 1; unfold Rename at 2; unfold "$".
         apply judge_abs_pi with (s := sort ◻);
           autorewrite with core.
         * do 2 unfold Rename at 2; unfold "$".
@@ -603,13 +850,134 @@ Module SystemU.
                   with (((pow (pow (ident 0)) → ident 0) → (pow (pow (ident 0)))) [[ ident 3 ]])
                   by reflexivity.
                 eapply judge_app; econstructor; reflexivity.
-             ++ 
-               
-                econstructor; cbv; eauto.
-                repeat f_equal.
+             ++ eapply judge_pi with (s₁ := ◻); eauto;
+                  autorewrite with core; cbn; auto.
+        * unfold Rename at 2 6. unfold "$".
+          do 2 (eapply judge_pi with (s₁ := ◻); eauto;
+                autorewrite with core; cbn; auto; unfold "$").
+      + unfold Rename at 4; unfold "$".
+        repeat (eapply judge_pi with (s₁ := ◻); eauto;
+                autorewrite with core; try (cbn; auto; assumption)).
+        cbn; constructor; reflexivity.
     - apply judge_pi with (s₁ := ◻) (s₂ := ◻); auto.
-      apply judge_pi with (s₁ := ◻) (s₂ := ◻); cbn; auto.
-      apply judge_pi with (s₁ := ◻) (s₂ := ◻); cbn; auto.
   Qed.
-                                                             
+
+  Definition σ := λ U ⇒ ident 0 ⋅ U ⋅ τ.
+
+  Lemma Rename_σ : forall ρ, Rename ρ σ = σ.
+  Proof.
+    intro ρ; reflexivity.
+  Qed.
+  
+  Arguments τ : simpl never.
+  Local Hint Resolve τ_judge : core.
+
+  Lemma σ_judge : forall Γ, Γ ⊢ σ ∈ U → pow (pow U).
+  Proof.
+    intro Γ; unfold σ.
+    apply judge_abs_pi with (s := sort ◻); auto;
+      autorewrite with core.
+    eapply judge_app_arrow; eauto.
+    - replace ((pow (pow U) → U) → pow (pow U)) with
+        (((pow (pow (ident 0)) → ident 0) → pow (pow (ident 0))) [[ U ]])
+        by reflexivity.
+      econstructor; eauto.
+      constructor; reflexivity.
+    - eapply judge_pi with (s₁ := ◻); eauto;
+        autorewrite with core; try (cbn; auto; assumption).
+  Qed.
+
+  Definition Δ :=
+    λ U ⇒ ¬ (∏ pow U `, σ ⋅ ident 1 ⋅ ident 0 → ident 0 ⋅ (τ ⋅ (σ ⋅ ident 1))).
+
+  Lemma Rename_Δ : forall ρ, Rename ρ Δ = Δ.
+  Proof.
+    intro ρ; reflexivity.
+  Qed.
+
+  Arguments σ : simpl never.
+  Local Hint Resolve σ_judge : core.
+
+  Lemma Δ_judge : forall Γ, Γ ⊢ Δ ∈ pow U.
+  Proof.
+    intro Γ; unfold Δ.
+    apply judge_abs_pi with (s := sort ◻);
+      autorewrite with core.
+    - unfold Rename at 4.
+      eapply neg_judge.
+      do 2 (econstructor; eauto; autorewrite with core).
+      + eapply judge_app_arrow.
+        * eapply judge_app_arrow; eauto.
+          -- apply σ_judge.
+          -- constructor; reflexivity.
+        * constructor; reflexivity.
+      + cbn; unfold "$".
+        eapply judge_app_arrow; eauto.
+        constructor; reflexivity.
+    - eapply judge_pi with (s₁ := ◻); eauto;
+        autorewrite with core; cbn; auto.
+  Qed.
+
+  Definition Ω :=
+    τ ⋅ λ pow U ⇒ ∏ U `, σ ⋅ ident 0 ⋅ ident 1 → ident 1 ⋅ ident 0.
+
+  Lemma Rename_Ω : forall ρ, Rename ρ Ω = Ω.
+  Proof.
+    intro ρ; reflexivity.
+  Qed.
+
+  Lemma Ω_judge : forall Γ, Γ ⊢ Ω ∈ U.
+  Proof.
+    intro Γ; unfold Ω.
+    eapply judge_app_arrow; eauto.
+    eapply judge_abs_pi; eauto; autorewrite with core.
+    - cbn; econstructor; eauto; unfold "$";
+        autorewrite with core.
+      econstructor; eauto; autorewrite with core.
+      + eapply judge_app_arrow.
+        * eapply judge_app_arrow.
+          -- apply σ_judge.
+          -- constructor; reflexivity.
+        * constructor; reflexivity.
+      + eapply judge_app_arrow; autorewrite with core;
+          constructor; reflexivity.
+    - eapply judge_pi with (s₁ := ◻) (s₃ := ◻); eauto;
+        autorewrite with core; cbn; auto.
+  Qed.
+  
+  Arguments Δ : simpl never.
+  Arguments Ω : simpl never.
+
+  Definition bad :=
+    λ (∏ pow U `, ∏ U `, (σ ⋅ ident 1 ⋅ ident 0 → ident 1 ⋅ ident 0) → ident 1 ⋅ Ω) ⇒
+      ((ident 0 ⋅ Δ ⋅
+              λ U ⇒ λ σ ⋅ ident 0 ⋅ Δ ⇒
+              λ (∏ pow U `, σ ⋅ ident 2 ⋅ ident 0 → ident 0 ⋅ (τ ⋅ (σ ⋅ ident 2))) ⇒
+              ident 0 ⋅ Δ ⋅ ident 1 ⋅ λ pow U ⇒ ident 0 ⋅ λ U ⇒ ident 1 ⋅ (τ ⋅ (σ ⋅ ident 0)))
+         ⋅ λ pow U ⇒ ident 1 ⋅ λ U ⇒ ident 1 ⋅ (τ ⋅ (σ ⋅ ident 0)))
+      ⋅ λ pow U ⇒ λ (∏ U `, σ ⋅ ident 0 ⋅ ident 1 → ident 1 ⋅ ident 0) ⇒
+      ident 0 ⋅ Ω ⋅ λ U ⇒ ident 1 ⋅ (τ ⋅ (σ ⋅ ident 0)).
+
+  Lemma bad_judge : forall Γ, Γ ⊢ bad ∈ ⊥.
+  Proof.
+    intro Γ; unfold bad.
+    Fail apply judge_abs_pi.
+    (* How does [bad] have type [⊥]?
+       Makes no sense... *)
+  Abort.
 End SystemU.
+
+Definition leibniz {A : Set} (x y : A) : Prop := forall P : A -> Prop, P x <-> P y.
+
+Lemma eq_leibniz : forall {A : Set} (a : A), leibniz a a.
+Proof.
+  firstorder.
+Qed.
+
+Lemma leibniz_eq : forall {A : Set} (x y : A), leibniz x y -> x = y.
+Proof.
+  unfold leibniz.
+  intros A x y h.
+  specialize h with (eq x).
+  destruct h as [h _]; auto.
+Qed.
