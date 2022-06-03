@@ -225,3 +225,36 @@ Section AccLemmas.
       induction HB; eauto.
   Qed.
 End AccLemmas.
+
+Definition obind {A B : Set} (o : option A) (ƒ : A -> option B) : option B :=
+  match o with
+  | None => None
+  | Some a => ƒ a
+  end.
+
+Notation "o '>>=' f" := (obind o f) (at level 50, left associativity).
+Notation "o '>>|' f" := (option_map f o) (at level 50, left associativity).
+Notation "'let*' x ':=' c1 'in' c2"
+  := (obind c1 (fun x => c2))
+       (at level 61, x pattern, 
+         format "'let*'  x  ':='  c1  'in' '//' c2", c1 at next level, 
+         right associativity).
+Notation "'let*' ' x ':=' c1 'in' c2"
+  := (obind c1 (fun x => c2))
+       (at level 61, x pattern, 
+         format "'let*'  ' x  ':='  c1  'in' '//' c2", c1 at next level, 
+         right associativity).
+
+Ltac match_some :=
+  match goal with
+  | h: match ?t with
+       | Some _ => _
+       | None => None
+       end = Some _
+    |- _ => destruct t eqn:?; try discriminate
+  end.
+
+Ltac some_inv :=
+  match goal with
+  | h: Some _ = Some _ |- _ => inv h
+  end.
