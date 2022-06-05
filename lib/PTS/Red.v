@@ -61,8 +61,8 @@ Section Congruence.
   Proof.
     intros A B σ h; generalize dependent σ;
       induction h; intro σ; simpl; auto.
-    (* todo: [subs σ (B [[ C ]]) = subs (exts σ) B [[ subs σ C ]]] *) admit.
-  Admitted.
+    rewrite subs_sub_distr; auto.
+  Qed.
   
   Lemma br_sub_context : forall A B C : term sorts,
       A ⟶ B -> A [[ C ]] ⟶ B [[ C ]].

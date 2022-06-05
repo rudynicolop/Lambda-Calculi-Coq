@@ -216,23 +216,15 @@ Section Sub.
       try (f_equal; eauto using Rename_ident_distr;
            try pose proof ihB C ρ (S n) as ihB; cbn in *; assumption).
   Qed.
-
-  Lemma Rename_mapply_σ : forall x m σ,
-      Rename (mapply m ext S) (σ x) = exts σ (mapply m ext S x).
-  Proof.
-    intro x; induction x as [| x ih];
-      intros [| m] σ; cbn; unfold "$"; auto.
-    (*intro m; induction m as [| m ih];
-      intros [| x] σ; cbn; unfold "$"; auto.
-    - Search (Rename).*)
-  Abort.
-
+  
   Lemma Rename_mapply_σ : forall m x σ,
-      Rename (mapply m ext S) (mapply m exts σ x) = exts (mapply m exts σ) (mapply m ext S x).
+      Rename (mapply m ext S) (mapply m exts σ x) = mapply (S m) exts σ (mapply m ext S x).
   Proof.
     intro m; induction m as [| m ih];
       intros [| x] σ; cbn; unfold "$"; auto.
-  Admitted.
+    specialize ih with x σ; cbn in ih.
+    rewrite <- ih, Rename_ext; reflexivity.
+  Qed.
   
   Lemma subs_Rename_mapply_ext : forall A σ m,
       Rename (mapply m ext S) (subs (mapply m exts σ) A)
@@ -242,20 +234,19 @@ Section Sub.
       as [s | x | A ihA B ihB
          | A ihA B ihB | A ihA B ihB];
       intros σ m; cbn; f_equal; auto;
+      try (rewrite Rename_mapply_σ; reflexivity);
       try (rewrite ihA; reflexivity);
       try (rewrite ihB; reflexivity);
       try (specialize ihB with σ (S m); cbn in ihB; assumption).
-    
   Qed.
   
   Lemma subs_Rename : forall A σ,
       Rename S (subs σ A) = subs (exts σ) (Rename S A).
   Proof.
-    intro A; induction A
-      as [s | x | A ihA B ihB
-         | A ihA B ihB | A ihA B ihB];
-      intros σ; cbn; f_equal; auto.
-    - rewrite ihB.
+    intros A σ.
+    pose proof subs_Rename_mapply_ext A σ 0 as h;
+      cbn in h; assumption.
+  Qed.
   
   Definition sub (body arg : term sorts) : term sorts :=
     subs (sub_helper arg) body.
@@ -315,22 +306,9 @@ Section RenameSub.
       intros [| x] C σ; cbn; unfold "$"; auto.
     - pose proof subs_rename_S (σ x) (subs σ C) 0 as h;
         cbn in h; rewrite h; reflexivity.
-    - 
-    intro x; induction x as [| x ih];
-      intros [| m] C σ; cbn; unfold "$"; auto.
-    - pose proof subs_rename_S (σ x) (subs σ C) 0 as h;
-        cbn in h; rewrite h; reflexivity.
-    - Search (subs _ (Rename _ _)).
-      (*replace (mapply (S m) exts (sub_helper C) (S x))
-        with ((Rename S (mapply m exts (sub_helper C) x))) by reflexivity.
-      Search (subs _ (Rename _ _)).
-      rewrite 
-      unfold mapply at 2
-      pose proof ih (S m) C σ as h;
-        cbn in h.
-      
-  Qed.*)
-  Abort.
+    - do 2 rewrite <- subs_Rename.
+      rewrite ih; reflexivity.
+  Qed.
   
   Lemma subs_subs_distr : forall (B C : term sorts) σ m,
       subs
@@ -344,26 +322,17 @@ Section RenameSub.
       as [s | x | A ihA B ihB
          | A ihA B ihB | A ihA B ihB];
       intros C σ m; cbn in *; unfold "$";
-      try (f_equal; eauto; assumption).
-    - 
-    - f_equal; eauto.
-      specialize ihB with C σ (S m); cbn in ihB; assumption.
-    - f_equal; eauto.
-      specialize ihB with C σ (S m); cbn in ihB; assumption.
+      try (rewrite subs_mapply_exts; reflexivity);
+      try (f_equal; eauto; assumption);
+      try (f_equal; eauto;
+           specialize ihB with C σ (S m); cbn in ihB; assumption).
   Qed.
   
   Lemma subs_sub_distr : forall (B C : term sorts) σ,
       subs σ (B [[ C ]]) = subs (exts σ) B [[ subs σ C ]].
   Proof.
-    intro B; induction B
-      as [s | x | A ihA B ihB
-         | A ihA B ihB | A ihA B ihB];
-      intros C σ; unfold "_ [[ _ ]]"; cbn in *; auto.
-    - destruct x as [| x]; cbn; unfold "$"; auto.
-      pose proof subs_rename_S (σ x) (subs σ C) 0 as h;
-        cbn in h; rewrite h; reflexivity.
-    - f_equal; eauto.
-    - f_equal; eauto.
-    
+    intros B C σ.
+    pose proof subs_subs_distr B C σ 0 as h;
+      cbn in h; assumption.
   Qed.
 End RenameSub.
