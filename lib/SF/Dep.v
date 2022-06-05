@@ -820,6 +820,7 @@ Proof.
       do 2 rewrite exts_type_equation_1; reflexivity.
     + do 2 rewrite exts_type_equation_2.
       specialize ih with Δ₁ Δ₂ X τ' σ.
+      Check subs_rename_type.
       do 2 rewrite subs_rename_type; f_equal.
       rewrite <- ih; clear ih.
       rewrite mapply_exts_type_equation_2; reflexivity.

@@ -41,8 +41,107 @@ Module Judge (T : Triple).
   where "Γ '⊢' A '∈' B" := (judge Γ A B) : type_scope.
   
   Equations Derive Signature for judge.
+  Local Hint Constructors br_rst : core.
+  
+  Lemma invert_judge_sort : forall Γ s A,
+      Γ ⊢ sort s ∈ A -> exists s', A =β sort s'.
+  Proof.
+    intros Γ s A h; depind h;
+      try match goal with
+          | h: sort _ = _ |- _ => inv h
+          end; firstorder eauto.
+  Qed.
+
+  Lemma invert_judge_ident : forall Γ x A,
+      Γ ⊢ ident x ∈ A -> exists B, A =β B /\ nth_error Γ x = Some B.
+  Proof.
+    intros Γ x A h; depind h;
+      try match goal with
+          | h: ident _ = _ |- _ => inv h
+          end; firstorder eauto.
+  Qed.
+
+  Lemma invert_judge_app : forall Γ C a D,
+      Γ ⊢ C ⋅ a ∈ D -> exists A B,
+        D =β B [[ a ]] /\ Γ ⊢ C ∈ ∏ A `, B /\ Γ ⊢ a ∈ A.
+  Proof.
+    intros Γ C a D h; depind h;
+      try match goal with
+          | h: _ ⋅ _ = _ |- _ => inv h
+          end; firstorder eauto.
+  Qed.
+
+  Lemma invert_judge_pi : forall Γ A B C,
+      Γ ⊢ ∏ A `, B ∈ C -> exists s₁ s₂ s₃,
+        C =β sort s₃ /\ rule s₁ s₂ s₃ /\ Γ ⊢ A ∈ sort s₁
+        /\ map (Rename S) (A :: Γ) ⊢ B ∈ sort s₂.
+  Proof.
+    intros Γ A B C h; depind h;
+      try match goal with
+          | h: ∏ _ `, _ = _ |- _ => inv h
+          end; firstorder eauto.
+  Qed.
+
+  Lemma invert_judge_abs : forall Γ A b C,
+      Γ ⊢ λ A ⇒ b ∈ C -> exists s₁ s₂ s₃ B,
+        C =β ∏ A `, B /\ rule s₁ s₂ s₃ /\ Γ ⊢ A ∈ sort s₁
+        /\ map (Rename S) (A :: Γ) ⊢ b ∈ B
+        /\ map (Rename S) (A :: Γ) ⊢ B ∈ sort s₂.
+  Proof.
+    intros Γ A b C h; depind h;
+      try match goal with
+          | h: λ _ ⇒ _ = _ |- _ => inv h
+          end.
+    - exists s₁ , s₂ , s₃ , B; repeat split; auto.
+    - destruct IHh2 as (s₁ & s₂ & s₃ & B'' & heq & hrule & hA & hb & hB);
+        exists s₁ , s₂ , s₃ , B''; repeat split; eauto.
+  Qed.
 
   Local Hint Constructors judge : core.
+
+  Lemma judge_br_rst : forall Γ A B C,
+      A =β B -> Γ ⊢ A ∈ C -> Γ ⊢ B ∈ C.
+  Proof.
+    intros Γ A B C hb ht; generalize dependent B.
+    induction ht; intros D hd.
+    (* Needs preservation... *)
+  Abort.
+
+  Definition judge_context (Γ : list (term sorts)) : Prop :=
+    Forall (fun A => exists s, Γ ⊢ A ∈ sort s) Γ.
+  
+  Lemma judge_br_rst_context : forall Γ Γ' A B,
+      judge_context Γ -> Forall2 br_rst Γ Γ' ->
+      Γ ⊢ A ∈ B -> Γ' ⊢ A ∈ B.
+  Proof.
+    intros Γ Γ' A B hg hg' h; generalize dependent Γ';
+      induction h; intros Γ' hg'; eauto.
+    - pose proof Forall2_length _ _ _ _ _ hg' as hleng.
+      pose proof nth_error_length _ _ _ H as hleng'.
+      rewrite hleng in hleng'.
+      pose proof length_nth_error _ _ hleng' as [A' hA'].
+      pose proof Forall2_nth_error _ _ _ _ _ hg' _ _ _ H hA' as h.
+      unfold judge_context in hg.
+      rewrite Forall_forall in hg.
+      eapply judge_conv with (B := A'); eauto.
+  Abort.
+
+  Lemma judge_pi_type : forall Γ A B C,
+      judge_context Γ -> Γ ⊢ A ∈ ∏ B `, C ->
+      exists s, Γ ⊢ ∏ B `, C ∈ sort s.
+  Proof.
+    intros Γ A B C hg h; depind h; eauto;
+      try match goal with
+          | h: ∏ _ `, _ = _ |- _ => inv h
+          end.
+    - unfold judge_context in hg.
+      apply nth_error_In in H.
+      rewrite Forall_forall in hg.
+      apply hg in H as [D h].
+      apply invert_judge_pi in h as h'.
+      destruct h' as (_ & _ & s₃ & hD & _ & _ & _).
+      exists s₃. eapply judge_conv with (B := sort D); eauto.
+  Abort.
 
   Lemma preservation : forall A A',
       A ⟶ A' -> forall Γ B, Γ ⊢ A ∈ B -> Γ ⊢ A' ∈ B.

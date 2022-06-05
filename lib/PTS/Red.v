@@ -52,12 +52,26 @@ Inductive br_rst {sorts : Set} : term sorts -> term sorts -> Prop :=
 where "A '=β' B" := (br_rst A B) : type_scope.
 
 Section Congruence.
-  Local Hint Constructors br : core.
-  Local Hint Constructors br_rt : core.
-  Local Hint Constructors br_rst : core.
-
   Context {sorts : Set}.
   
+  Local Hint Constructors br : core.
+
+  Lemma br_subs_context : forall (A B : term sorts) σ,
+      A ⟶ B -> subs σ A ⟶ subs σ B.
+  Proof.
+    intros A B σ h; generalize dependent σ;
+      induction h; intro σ; simpl; auto.
+    (* todo: [subs σ (B [[ C ]]) = subs (exts σ) B [[ subs σ C ]]] *) admit.
+  Admitted.
+  
+  Lemma br_sub_context : forall A B C : term sorts,
+      A ⟶ B -> A [[ C ]] ⟶ B [[ C ]].
+  Proof.
+    eauto using br_subs_context.
+  Qed.
+  
+  Local Hint Constructors br_rt : core.
+
   Lemma br_br_rt : forall A B : term sorts, A ⟶ B -> A ⟶* B.
   Proof.
     intros A B h; eauto.
@@ -130,6 +144,77 @@ Section Congruence.
   Lemma br_rt_pi_cong : forall A B C D : term sorts,
       A ⟶* B -> C ⟶* D -> ∏ A `, C ⟶* ∏ B `, D.
   Proof. eauto. Qed.
+
+  Local Hint Resolve br_rt_app_cong : core.
+  Local Hint Resolve br_rt_abs_cong : core.
+  Local Hint Resolve br_rt_pi_cong : core.
+  Local Hint Resolve br_br_rt : core.
+
+  Lemma br_mapply_rename : forall (A B : term sorts) m ρ,
+      A ⟶ B -> mapply m (Rename ρ) A ⟶  mapply m (Rename ρ) B.
+  Proof.
+    intros A B m ρ h; generalize dependent ρ;
+      generalize dependent m; induction h;
+      intros m ρ.
+    - rewrite mapply_Rename_app,
+        mapply_Rename_abs, mapply_Rename_sub_distr; auto.
+    - do 2 rewrite mapply_Rename_app; auto.
+    - do 2 rewrite mapply_Rename_app; auto.
+    - do 2 rewrite mapply_Rename_abs; auto.
+    - do 2 rewrite mapply_Rename_abs; auto.
+    - do 2 rewrite mapply_Rename_pi; auto.
+    - do 2 rewrite mapply_Rename_pi; auto.
+  Qed.
+
+  Lemma br_mapply_rename_mapply_sub_helper : forall m n x (A B : term sorts),
+      A ⟶ B ->
+      mapply n (Rename S) (mapply m exts (sub_helper A) x)
+             ⟶* mapply n (Rename S) (mapply m exts (sub_helper B) x).
+  Proof.
+    intro m; induction m as [| m ih];
+      intros n [| x] A B h; cbn; unfold "$"; auto.
+    - auto using br_mapply_rename.
+    - pose proof ih (S n) x _ _ h as H; cbn in H.
+      do 2 rewrite mapply_comm; assumption.
+  Qed.
+  
+  Lemma br_mapply_sub_helper : forall x m (A B : term sorts),
+      A ⟶ B ->
+      mapply m exts (sub_helper A) x
+             ⟶* mapply m exts (sub_helper B) x.
+  Proof.
+    intro x; induction x as [| x ih];
+      intros [| m] A B h; cbn; unfold "$"; auto.
+    pose proof br_mapply_rename_mapply_sub_helper m 1 x _ _ h;
+      cbn in *; assumption.
+  Qed.
+
+  Lemma br_subs_substitute : forall (A B C : term sorts) m,
+      A ⟶ B ->
+      subs (mapply m exts (sub_helper A)) C
+           ⟶* subs (mapply m exts (sub_helper B)) C.
+  Proof.
+    intros A B C; generalize dependent B;
+      generalize dependent A;
+      induction C as
+      [s | x | C₁ ihC₁ C₂ ihC₂
+      | C₁ ihC₁ C₂ ihC₂ | C₁ ihC₁ C₂ ihC₂];
+      intros A B m h; cbn; eauto using br_mapply_sub_helper.
+    - apply br_rt_abs_cong; eauto.
+      specialize ihC₂ with A B (S m); cbn in ihC₂; auto.
+    - apply br_rt_pi_cong; eauto.
+      specialize ihC₂ with A B (S m); cbn in ihC₂; auto.
+  Qed.
+  
+  Lemma br_sub_substitute : forall A B C : term sorts,
+      A ⟶ B -> C [[ A ]] ⟶* C [[ B ]].
+  Proof.
+    intros A B C h; unfold "_ [[ _ ]]".
+    pose proof br_subs_substitute A B C 0 h as H;
+      cbn in H; assumption.
+  Qed.
+  
+  Local Hint Constructors br_rst : core.
 
   Lemma br_rt_rst : forall A B : term sorts,
       A ⟶* B -> A =β B.

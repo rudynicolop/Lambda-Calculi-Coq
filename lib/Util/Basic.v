@@ -3,17 +3,27 @@ Require Export Coq.Program.Basics Coq.Classes.RelationClasses
         Coq.micromega.Lia Coq.Arith.Compare_dec.
 Export ListNotations.
 
-Fixpoint mapply {A : Set} (m : nat) (f : A -> A) (a : A) : A :=
-  match m with
-  | O   => a
-  | S m => f (mapply m f a)
-  end.
+Section Mapply.
+  Context {A : Set}.
 
-Lemma mapply_id : forall {A : Set} (m : nat) (a : A),
-    mapply m (fun a => a) a = a.
-Proof.
-  intros A m; induction m as [| m ih]; intro a; cbn; auto.
-Qed.
+  Fixpoint mapply (m : nat) (f : A -> A) (a : A) : A :=
+    match m with
+    | O   => a
+    | S m => f (mapply m f a)
+    end.
+
+  Lemma mapply_comm : forall m f a, mapply m f (f a) = f (mapply m f a).
+  Proof.
+    intro m; induction m as [| m ih];
+      intros f a; cbn; f_equal; auto.
+  Qed.
+
+  Lemma mapply_id : forall (m : nat) (a : A),
+      mapply m (fun a => a) a = a.
+  Proof.
+    intros m; induction m as [| m ih]; intro a; cbn; auto.
+  Qed.
+End Mapply.
 
 Lemma mapply_plus : forall m n,
     mapply m S n = m + n.
